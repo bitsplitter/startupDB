@@ -3,6 +3,10 @@
   "version": "1.0.2",
   "description": "a filebased database for Express",
   "main": "dist/server.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bitsplitter/startupDB.git"
+  }
   "scripts": {
     "test-behaviour": "mocha ./test/behaviour.js ",
     "test": "mocha ./test/behaviour.js && mocha ./test/implementation0.js && mocha ./test/implementation1.js && mocha ./test/implementation2.js",
