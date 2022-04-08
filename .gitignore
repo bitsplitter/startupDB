@@ -1,0 +1,10 @@
+leesplank
+checkpoint
+oplog
+archive
+node_modules*
+tmp
+backup*
+coverage
+.DS_Store
+.nyc_output

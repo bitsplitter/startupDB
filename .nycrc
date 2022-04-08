@@ -1,0 +1,11 @@
+{
+  "all": true,
+  "useSpawnWrap": true,
+  "cache":false,
+  "include": [
+    "dist/*.js",
+    "test/behaviour.js"
+  ],
+  "exclude": [
+  ]
+}
