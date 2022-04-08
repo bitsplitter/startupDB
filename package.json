@@ -1,8 +1,8 @@
 {
   "name": "startupdb",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "a filebased database for Express",
-  "main": "main.js",
+  "main": "server.js",
   "scripts": {
     "test-behaviour": "mocha ./test/behaviour.js ",
     "test": "mocha ./test/behaviour.js && mocha ./test/implementation0.js && mocha ./test/implementation1.js && mocha ./test/implementation2.js",
