@@ -1184,7 +1184,7 @@ describe("Behaviour after POSTn", function () {
             .send({ "command": "inspect" })
             .expect(200)
             .expect(function (res) {
-                assert.strictEqual(res.body.leastRecentlyUsed.collection, '/Users/jeroen/startupDB/leesplank/array')
+                assert.include(res.body.leastRecentlyUsed.collection, '/startupDB/leesplank/array')
             })
             .end(done)
     })
