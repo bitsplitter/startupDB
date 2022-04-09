@@ -6,7 +6,6 @@ Although its build using a unit test library, the tests are not independent, in 
 for (var key in Object.keys(require.cache)) { delete require.cache[key]; }
 const fs = require('fs')
 const request = require('supertest')
-// const path = require('path')
 const { assert } = require('chai')
 const should = require('chai').should()
 const express = require('express')
