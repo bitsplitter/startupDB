@@ -97,7 +97,7 @@ const fileTimestampSync = function (fileName: string, db) {
  * That means that the last file appears as the last file in the directory and we don't have to sort.
  */
 const mostRecentFile = async function (dirName: string, db: DBConfig) {
-    const files = await readdir(dirName, db)
+    const files = (await readdir(dirName, db)).map(file => parseInt(file)).sort((a, b) => a - b)
     const nrFiles = files.length
     return files[nrFiles - 1]
 }
