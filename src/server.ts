@@ -216,7 +216,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
 
   // We're entering a critical section here that should not run concurrently.
   let mutex = startupDB[collectionId]?.lock
-  if (!mutex?.aquire) {
+  if (!mutex?.acquire) {
     mutex = new Mutex()
     startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
     startupDB[collectionId].lock = mutex
@@ -229,8 +229,9 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     try {
       const raw = <string><unknown>await persist.readFile(dataDirectory, 'latest.json', db)
       const latest = raw.toString()
-      // This contains a previously save checkpoint
+      // This contains a previously saved checkpoint
       startupDB[collectionId] = JSON.parse(latest)
+      startupDB[collectionId].lock = mutex
       usedBytesInMemory += JSON.stringify(latest).length
       checkPoint = startupDB[collectionId].checkPoint
     } catch (err) {
