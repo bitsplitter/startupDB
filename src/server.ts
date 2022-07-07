@@ -5,7 +5,7 @@ import path from 'path'
 import { compileExpression } from 'filtrex'
 import { v4 as uuidv4 } from 'uuid'
 import jsonPatch from 'fast-json-patch'
-import { Mutex } from 'async-mutex'
+import { Mutex, MutexInterface } from 'async-mutex'
 import debug from 'debug'
 const debugLogger = debug('startupdb')
 import chalk from 'chalk'
@@ -215,7 +215,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
   let checkPoint = 0
 
   // We're entering a critical section here that should not run concurrently.
-  let mutex = startupDB[collectionId]?.lock
+  let mutex: MutexInterface = startupDB[collectionId]?.lock
   if (!mutex?.acquire) {
     mutex = new Mutex()
     startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)

@@ -1,3 +1,5 @@
+import { MutexInterface } from "async-mutex"
+
 function deepCopy<Type>(obj: Type): Type {
     return <Type>JSON.parse(JSON.stringify(obj))
 }
@@ -5,7 +7,7 @@ const EMPTY_COLLECTION = {
     "checkPoint": 0,
     "nextOpLogId": 1,
     "savedAt": 0,
-    "lock": {},
+    "lock": <MutexInterface>{},
     "data": {},
     "options": {},
     "lastAccessed": 0,

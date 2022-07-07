@@ -1,4 +1,5 @@
 import { Request, Response } from 'express'
+import { MutexInterface } from 'async-mutex'
 
 export type DBCommandParameters = {
     options?: any,
@@ -55,7 +56,7 @@ export interface Collection {
     lastAccessed: number,
     lastModified: number,
     data: CollectionOfObjects,
-    lock: any,
+    lock: MutexInterface,
     checkPoint: number,
     nextOpLogId: number,
     savedAt: number
