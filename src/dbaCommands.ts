@@ -120,9 +120,7 @@ const garbageCollector = async function (req: Req, commandParameters: DBCommandP
 const inspect = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, MAX_BYTES_IN_MEMORY, usedBytesInMemory }: { startupDB: any, MAX_BYTES_IN_MEMORY: number, usedBytesInMemory: number }) {
     const v8 = require('v8')
     const heap = v8.getHeapStatistics()
-    const orderedCollections = Object.keys(startupDB).map(collection => {
-        return { "collection": collection, "lastAccessed": startupDB[collection].lastAccessed }
-    }).sort((a, b) => a.lastAccessed - b.lastAccessed)
+    const orderedCollections = Object.keys(startupDB).map(collection => ({ "collection": collection, "lastAccessed": startupDB[collection].lastAccessed })).sort((a, b) => a.lastAccessed - b.lastAccessed)
 
     return {
         "status": "success",

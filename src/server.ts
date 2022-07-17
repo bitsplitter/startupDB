@@ -190,7 +190,6 @@ function getOplogIDsFromFileNames(files: Array<string>, checkPoint: number): Arr
 // Helper function to loop over all opLog files after a certain checkPoint and call a function on it's content
 //
 const processOplog = async function (collection: string, db: DBConfig, checkPoint: number, func: Function) {
-  const collectionId = db.dataFiles + '/' + collection
   const dataDirectory = './oplog/' + collection
   const files = await persist.readdir(dataDirectory, db)
   const opLogIds = getOplogIDsFromFileNames(files, checkPoint).sort(function (a: number, b: number) { return a - b }) // opLog must be processed in order. 
@@ -220,6 +219,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     mutex = new Mutex()
     startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
     startupDB[collectionId].lock = mutex
+    startupDB[collectionId].lastAccessed = (new Date()).getTime()
   }
   const release = await mutex.acquire()
   // We got the lock so we know we're the only one running this code now.
@@ -232,12 +232,15 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
       // This contains a previously saved checkpoint
       startupDB[collectionId] = JSON.parse(latest)
       startupDB[collectionId].lock = mutex
+      startupDB[collectionId].lastAccessed = (new Date()).getTime()
       usedBytesInMemory += JSON.stringify(latest).length
       checkPoint = startupDB[collectionId].checkPoint
     } catch (err) {
       if (err.code == 'ENOENT') {
         // Pretend that there is an empty collection
         startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
+        startupDB[collectionId].lock = mutex
+        startupDB[collectionId].lastAccessed = (new Date()).getTime()
       }
     }
     await processOplog(collection, db, checkPoint, async function (operation: Operation) {
@@ -279,9 +282,9 @@ const startupDBGC = function (options: any): number {
   const threshold = options?.testing ? 1024 : MAX_BYTES_IN_MEMORY
   if (usedBytesInMemory < threshold) return deletedCollections
   // Remove least recently used collections
-  const orderedCollections = Object.keys(startupDB).map(collection => {
-    return { "collection": collection, "lastAccessed": startupDB[collection].lastAccessed }
-  }).sort((a, b) => a.lastAccessed - b.lastAccessed)
+  const orderedCollections = Object.keys(startupDB)
+    .map(collection => ({ "collection": collection, "lastAccessed": startupDB[collection].lastAccessed }))
+    .sort((a, b) => a.lastAccessed - b.lastAccessed)
   let nrDeletedObjects = 0
   const nrBytesToDelete = usedBytesInMemory - MAX_BYTES_IN_MEMORY
   let indexOfCollectionToDelete = 0
