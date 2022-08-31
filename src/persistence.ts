@@ -93,8 +93,7 @@ const fileTimestampSync = function (fileName: string, db) {
     }
 }
 /**
- * find the last file in an opLog folder. The filenames are all numerical and added in order.
- * That means that the last file appears as the last file in the directory and we don't have to sort.
+ * find the last file in an opLog folder.
  */
 const mostRecentFile = async function (dirName: string, db: DBConfig) {
     const files = (await readdir(dirName, db)).map(file => parseInt(file)).sort((a, b) => a - b)

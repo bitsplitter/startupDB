@@ -451,7 +451,13 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
     }
     const filteredIds = Object.keys(startupDB[collectionId].data).filter(id => myFilter(startupDB[collectionId].data[id]))
     const filteredArray = filteredIds.map(id => startupDB[collectionId].data[id])
-    if (returnType == 'checkpoint') return { "statusCode": 200, "data": { ...startupDB[collectionId], "data": filteredArray } }
+    if (returnType == 'checkpoint') {
+      const filteredObject = filteredArray.reduce((acc, item) => {
+        acc[item.id] = item
+        return acc
+      }, {})
+      return { "statusCode": 200, "data": { ...startupDB[collectionId], "data": filteredObject } }
+    }
     return { "statusCode": 200, "data": filteredArray }
   } else {
     // Return entire collection

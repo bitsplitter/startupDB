@@ -653,7 +653,7 @@ describe('Behaviour GET /leesplank/origineel?returnType=checkpoint&filter=id=="N
             .expect(200)
             .expect('Content-Type', 'application/json; charset=utf-8')
             .expect(function (res) {
-                assert.strictEqual(res.body.data[0].id, "Noot")
+                assert.strictEqual(res.body.data.Noot.id, "Noot")
             })
             .end(done)
     })
