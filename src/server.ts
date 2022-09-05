@@ -6,11 +6,10 @@ import { compileExpression } from 'filtrex'
 import { v4 as uuidv4 } from 'uuid'
 import jsonPatch from 'fast-json-patch'
 import { Mutex, MutexInterface } from 'async-mutex'
-import debug from 'debug'
-const debugLogger = debug('startupdb')
+import util from 'util';
+const debugLogger = util.debuglog('startupdb');
 import chalk from 'chalk'
 const logInfo = chalk.blue
-const logError = chalk.red
 import persist from './persistence'
 import dbaCommands from './dbaCommands'
 import tools from './tools'
@@ -243,12 +242,12 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
         startupDB[collectionId].lastAccessed = (new Date()).getTime()
       }
     }
-    await processOplog(collection, db, checkPoint, async function (operation: Operation) {
+    await processOplog(collection, db, checkPoint, function (operation: Operation) {
       startupDB[collectionId].nextOpLogId = operation.opLogId + 1
-      await applyCRUDoperation(operation, db)
+      applyCRUDoperation(operation, db)
     })
   } else {
-    // debugLogger(logInfo('Locked... no need to retrieve', collection))
+    debugLogger(logInfo('Locked... no need to retrieve', collection))
   }
   release() // Release the lock!
   debugLogger(logInfo('Released ' + collection))
@@ -257,6 +256,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
 const loadCollection = async function (db: DBConfig, collection: string) {
   const collectionId = db.dataFiles + '/' + collection
   if (!startupDB[collectionId]?.data || startupDB[collectionId].nextOpLogId == 1) await initStartupDB(db, collection)
+  startupDB[collectionId].lastAccessed = (new Date()).getTime()
 }
 
 
@@ -652,7 +652,7 @@ const processMethod = async function (req: Req, res: Res, next: NextFunction, co
     if (response.statusCode > 200) return res.status(response.statusCode).send(response.message)
     if (query['fromOpLogId']) return await sendOpLog(req, res, next, parseInt(query['fromOpLogId']))
   } catch (e) {
-    console.log('error', e)
+    console.log('STARTUPDB Error', e)
     return res.status(500).send('')
   }
   return res.send(response.data)
@@ -690,7 +690,7 @@ const db = function (options: DBOptions) {
     req.startupDB.options = options
     req.startupDB.dataFiles = options.dataFiles
     req.url = decodeURIComponent(req.url)
-    req.startupDB.collection = req.url.split('?')[0].substr(1)
+    req.startupDB.collection = req.url.split('?')[0].substring(1)
 
     // Define 'internal' CRUD functions that can be called from hooks functions
     req.startupDB.createObjects = async function (collection: string, payload: ArrayOfDBDataObjects) { return dbCreateObjects(req.startupDB, collection, tools.ensureArray(payload)) }
