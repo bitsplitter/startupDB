@@ -285,19 +285,30 @@ const startupDBGC = function (options: any): number {
   const orderedCollections = Object.keys(startupDB)
     .map(collection => ({ "collection": collection, "lastAccessed": startupDB[collection].lastAccessed }))
     .sort((a, b) => a.lastAccessed - b.lastAccessed)
-  let nrDeletedObjects = 0
-  const nrBytesToDelete = usedBytesInMemory - MAX_BYTES_IN_MEMORY
+
+  // Recalculate usedBytesInMemory when low on memory with few resources in cache.
+  // This is an indication that usedBytesInMemory is too far off with reality.
+  // This causes too many cache evictions.
+  // Recalculation is relatively cheap because of the small number of resources to recalculate
+
+  if (usedBytesInMemory > MAX_BYTES_IN_MEMORY * .8 && orderedCollections.length < 100) {
+    usedBytesInMemory = orderedCollections.reduce((acc, item) => acc + JSON.stringify(item).length, 0)
+    console.log('RECALCULATED MEMORY FOOTPRINT')
+  }
+
+  let nrDeletedBytes = 0
+  const nrBytesToDelete = usedBytesInMemory - threshold
   let indexOfCollectionToDelete = 0
   do {
     const collectionToDelete = orderedCollections[indexOfCollectionToDelete++]?.collection
     if (collectionToDelete && startupDB[collectionToDelete]?.data) {
-      const nrObjectsInCollection = JSON.stringify(startupDB[collectionToDelete].data).length
-      nrDeletedObjects += nrObjectsInCollection
+      const nrBytesInCollection = JSON.stringify(startupDB[collectionToDelete].data).length
+      nrDeletedBytes += nrBytesInCollection
       delete startupDB[collectionToDelete]
       deletedCollections++
-      usedBytesInMemory -= nrObjectsInCollection
+      usedBytesInMemory -= nrBytesInCollection
     }
-  } while (nrDeletedObjects < nrBytesToDelete && indexOfCollectionToDelete < orderedCollections.length)
+  } while (nrDeletedBytes < nrBytesToDelete && indexOfCollectionToDelete < orderedCollections.length)
   return deletedCollections
 }
 

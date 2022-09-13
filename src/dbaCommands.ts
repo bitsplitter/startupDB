@@ -132,7 +132,8 @@ const inspect = async function (req: Req, commandParameters: DBCommandParameters
         "leastRecentlyUsed": {
             "collection": orderedCollections[0]?.collection,
             "lastAccessed": orderedCollections[0]?.lastAccessed
-        }
+        },
+        "nrCollectionsInCache": orderedCollections.length
     }
 }
 const list = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
