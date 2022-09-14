@@ -1175,7 +1175,7 @@ describe('Behaviour GET /leesplank/notthere', function () {
     })
 })
 
-describe("Behaviour after POSTn", function () {
+describe("Behaviour after POST", function () {
     it("leastRecentlyUsed collection should be /Users/jeroen/startupDB/leesplank/reject)", function (done) {
         request(app)
             .post("/leesplank")
@@ -1183,12 +1183,50 @@ describe("Behaviour after POSTn", function () {
             .send({ "command": "inspect" })
             .expect(200)
             .expect(function (res) {
-                assert.include(res.body.leastRecentlyUsed.collection, '/startupDB/leesplank/array')
+                assert.include(res.body.leastRecentlyUsed.collection, '/startupDB/leesplank/silent')
+            })
+            .end(done)
+    })
+})
+describe("Behaviour after POSTing a complex object", function () {
+    it("shour return the original object)", function (done) {
+        request(app)
+            .post("/leesplank/complex")
+            .set("Content-type", "application/json")
+            .send({ "id": "complexObject", "nrTiles": 17, "tiles": { "aap": "Een dier met een staart.", "noot": "Een harde vrucht." } })
+            .expect(200)
+            .expect(function (res) {
+                assert.strictEqual(res.body[0].id, "complexObject")
             })
             .end(done)
     })
 })
 
+describe('Behaviour GET /leesplank/complex (filtered by nonexisting property)', function () {
+    it('should return nothing.', function (done) {
+        request(app)
+            .get('/leesplank/complex?filter=tiles.mies=="De poes"')
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect(function (res) {
+                assert.strictEqual(res.body.length, 0)
+            })
+            .end(done)
+    })
+})
+
+describe('Behaviour GET /leesplank/complex (filtered by property)', function () {
+    it('should return nothing.', function (done) {
+        request(app)
+            .get('/leesplank/complex?filter=tiles.aap=="Een dier met een staart."')
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect(function (res) {
+                assert.strictEqual(res.body[0].id, "complexObject")
+            })
+            .end(done)
+    })
+})
 describe('Behaviour PUT /leesplank/origineel', function () {
     it('should return the error from a hook when the hook throws an error.', function (done) {
         request(app)
