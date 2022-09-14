@@ -232,7 +232,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
       startupDB[collectionId] = JSON.parse(latest)
       startupDB[collectionId].lock = mutex
       startupDB[collectionId].lastAccessed = (new Date()).getTime()
-      usedBytesInMemory += JSON.stringify(latest).length
+      usedBytesInMemory += JSON.stringify(startupDB[collectionId].data).length
       checkPoint = startupDB[collectionId].checkPoint
     } catch (err) {
       if (err.code == 'ENOENT') {
