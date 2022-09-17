@@ -25,7 +25,7 @@ app.use(express.json({ inflate: true, limit: "100mb" }))
 app.use("/leesplank", startupDB.db({ readOnly: true }))
 const server = app.listen(3456)
 
-describe("Behaviour PUT command", function () {
+describe("Behaviour: PUT command", function () {
     it("executing a PUT command on a readonly database shoud return an error", function (done) {
         request(app)
             .put("/leesplank")

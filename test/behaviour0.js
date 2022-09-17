@@ -20,7 +20,7 @@ try {
 } catch (e) { }
 app.use(express.json({ inflate: true, limit: '1mb' }))
 
-describe('Behaviour setting up a non-function hook ', function () {
+describe('Behaviour: setting up a non-function hook ', function () {
     it('should fail validation', function () {
         should.throw(() => { app.use("/leesplank", startupDB.beforePost(3.14)) })
     })
@@ -85,7 +85,7 @@ app.use("/leesplank", startupDB.db({
 // app.use("/leesplank", startupDB.db())
 const server = app.listen(3456);
 
-describe('Behaviour GET /leesplank/origineel', function () {
+describe('Behaviour: GET /leesplank/origineel', function () {
     it('should return a 200 even when the collection is not initialized.', function (done) {
         request(app)
             .get('/leesplank/origineel')
@@ -94,7 +94,7 @@ describe('Behaviour GET /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour POST /leesplank/origineel', function () {
+describe('Behaviour: POST /leesplank/origineel', function () {
     it('should return the POSTed body', function (done) {
         request(app)
             .post('/leesplank/origineel')
@@ -156,7 +156,7 @@ describe("Behaviour during DBA commands", function () {
     })
 })
 
-describe('Behaviour POST /leesplank/origineel', function () {
+describe('Behaviour: POST /leesplank/origineel', function () {
     it('should reject non-json payloads', function (done) {
         request(app)
             .post('/leesplank/origineel')
@@ -167,7 +167,7 @@ describe('Behaviour POST /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour POST /leesplank/reject', function () {
+describe('Behaviour: POST /leesplank/reject', function () {
     it('should return a 400 when posting a non-validating document', function (done) {
         request(app)
             .post('/leesplank/reject')
@@ -181,7 +181,7 @@ describe('Behaviour POST /leesplank/reject', function () {
     })
 })
 
-describe('Behaviour POST /leesplank/reject', function () {
+describe('Behaviour: POST /leesplank/reject', function () {
     it('should return a 500 when posting a non-validating document that throws the validation function', function (done) {
         request(app)
             .post('/leesplank/reject')
@@ -194,7 +194,7 @@ describe('Behaviour POST /leesplank/reject', function () {
     })
 })
 
-describe('Behaviour ??? /leesplank/origineel', function () {
+describe('Behaviour: ??? /leesplank/origineel', function () {
     it('should pass through for non-implemented methods', function (done) {
         request(app)
             .trace('/leesplank/origineel')
@@ -204,7 +204,7 @@ describe('Behaviour ??? /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour PUT /leesplank/origineel', function () {
+describe('Behaviour: PUT /leesplank/origineel', function () {
     it('should return a 400 when putting a non-validating document', function (done) {
         request(app)
             .put('/leesplank/reject')
@@ -217,7 +217,7 @@ describe('Behaviour PUT /leesplank/origineel', function () {
             .end(done)
     })
 })
-describe('Behaviour GET /leesplank/origineel', function () {
+describe('Behaviour: GET /leesplank/origineel', function () {
     it('should return a 404 when trying to retrieve an noexisting document.', function (done) {
         request(app)
             .get('/leesplank/origineel?id=Wim')
@@ -225,7 +225,7 @@ describe('Behaviour GET /leesplank/origineel', function () {
             .end(done)
     })
 })
-describe('Behaviour GET /leesplank/origineel', function () {
+describe('Behaviour: GET /leesplank/origineel', function () {
     it('should return the error from a hook when it fails.', function (done) {
         request(app)
             .get('/leesplank/origineel?letGetHookFail=409')
@@ -233,7 +233,7 @@ describe('Behaviour GET /leesplank/origineel', function () {
             .end(done)
     })
 })
-describe('Behaviour GET /leesplank/origineel', function () {
+describe('Behaviour: GET /leesplank/origineel', function () {
     it('should return the error from a hook when i fails.', function (done) {
         request(app)
             .get('/leesplank/origineel?letGetHookFail=404')
@@ -242,7 +242,7 @@ describe('Behaviour GET /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour POST /leesplank/origineel', function () {
+describe('Behaviour: POST /leesplank/origineel', function () {
     it('should return the POSTed body', function (done) {
         request(app)
             .post('/leesplank/origineel')
@@ -265,7 +265,7 @@ describe('Behaviour POST /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour PUT /leesplank/origineel', function () {
+describe('Behaviour: PUT /leesplank/origineel', function () {
     it('should return the PUT body', function (done) {
         request(app)
             .put('/leesplank/origineel')
@@ -288,7 +288,7 @@ describe('Behaviour PUT /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour GET /leesplank/origineel', function () {
+describe('Behaviour: GET /leesplank/origineel', function () {
     it('should return the POSTed bodys from the previous tests.', function (done) {
         request(app)
             .get('/leesplank/origineel')
@@ -306,7 +306,7 @@ describe('Behaviour GET /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour GET /leesplank/origineel (filtered)', function () {
+describe('Behaviour: GET /leesplank/origineel (filtered)', function () {
     it('should return objects matching the filter.', function (done) {
         request(app)
             .get('/leesplank/origineel?filter=id in ("Mies", "Jet")')
@@ -320,7 +320,7 @@ describe('Behaviour GET /leesplank/origineel (filtered)', function () {
     })
 })
 
-describe('Behaviour GET /leesplank/origineel (filtered)', function () {
+describe('Behaviour: GET /leesplank/origineel (filtered)', function () {
     it('should return no objects when none match the filter.', function (done) {
         request(app)
             .get('/leesplank/origineel?filter=id in ("Schapen")')
@@ -332,7 +332,7 @@ describe('Behaviour GET /leesplank/origineel (filtered)', function () {
             .end(done)
     })
 })
-describe('Behaviour GET /leesplank/origineel (filtered)', function () {
+describe('Behaviour: GET /leesplank/origineel (filtered)', function () {
     it('should return objects matching the filter.', function (done) {
         request(app)
             .get('/leesplank/origineel?filter=id~=".*i.*"')
@@ -346,7 +346,7 @@ describe('Behaviour GET /leesplank/origineel (filtered)', function () {
     })
 })
 
-describe('Behaviour GET /leesplank/origineel (filtered)', function () {
+describe('Behaviour: GET /leesplank/origineel (filtered)', function () {
     it('should return an error on an malformed filter.', function (done) {
         request(app)
             .get('/leesplank/origineel?filter=id~=.*i.*"')
@@ -356,7 +356,7 @@ describe('Behaviour GET /leesplank/origineel (filtered)', function () {
     })
 })
 
-describe('Behaviour POST /leesplank/origineel', function () {
+describe('Behaviour: POST /leesplank/origineel', function () {
     it('should return a 409 on a duplicate key', function (done) {
         request(app)
             .post('/leesplank/origineel')
@@ -369,7 +369,7 @@ describe('Behaviour POST /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour POST /leesplank/origineel', function () {
+describe('Behaviour: POST /leesplank/origineel', function () {
     it('should return a 409 on a duplicate key', function (done) {
         request(app)
             .post('/leesplank/origineel')
@@ -382,7 +382,7 @@ describe('Behaviour POST /leesplank/origineel', function () {
             .end(done)
     })
 })
-describe('Behaviour GET /leesplank/origineel', function () {
+describe('Behaviour: GET /leesplank/origineel', function () {
     it('should return a 404 when trying to retrieve an noexisting document.', function (done) {
         request(app)
             .get('/leesplank/origineel?id=Does')
@@ -391,7 +391,7 @@ describe('Behaviour GET /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour DELETE one document from /leesplank/origineel', function () {
+describe('Behaviour: DELETE one document from /leesplank/origineel', function () {
     it('should return the original document', function (done) {
         request(app)
             .delete('/leesplank/origineel?id=Aap')
@@ -408,7 +408,7 @@ describe('Behaviour DELETE one document from /leesplank/origineel', function () 
     })
 })
 
-describe('Behaviour DELETE nonexisting document from /leesplank/origineel', function () {
+describe('Behaviour: DELETE nonexisting document from /leesplank/origineel', function () {
     it('should return 400', function (done) {
         request(app)
             .delete('/leesplank/origineel?id=Aap')
@@ -421,7 +421,7 @@ describe('Behaviour DELETE nonexisting document from /leesplank/origineel', func
     })
 })
 
-describe('Behaviour DELETE multiple documents where one does not exist from /leesplank/origineel', function () {
+describe('Behaviour: DELETE multiple documents where one does not exist from /leesplank/origineel', function () {
     it('should return 400', function (done) {
         request(app)
             .delete('/leesplank/origineel')
@@ -435,7 +435,7 @@ describe('Behaviour DELETE multiple documents where one does not exist from /lee
     })
 })
 
-describe('Behaviour DELETE multiple documents from /leesplank/origineel', function () {
+describe('Behaviour: DELETE multiple documents from /leesplank/origineel', function () {
     it('should return the original documents', function (done) {
         request(app)
             .delete('/leesplank/origineel')
@@ -455,7 +455,7 @@ describe('Behaviour DELETE multiple documents from /leesplank/origineel', functi
     })
 })
 
-describe('Behaviour PUT /leesplank/origineel', function () {
+describe('Behaviour: PUT /leesplank/origineel', function () {
     it('should return the PUT body', function (done) {
         request(app)
             .put('/leesplank/origineel')
@@ -480,7 +480,7 @@ describe('Behaviour PUT /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour PATCH /leesplank/origineel', function () {
+describe('Behaviour: PATCH /leesplank/origineel', function () {
     it('should return the PATCH body', function (done) {
         request(app)
             .patch('/leesplank/origineel')
@@ -505,7 +505,7 @@ describe('Behaviour PATCH /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour PATCH /leesplank/origineel', function () {
+describe('Behaviour: PATCH /leesplank/origineel', function () {
     it('should return an error ona non-validation PATCH', function (done) {
         request(app)
             .patch('/leesplank/origineel')
@@ -521,7 +521,7 @@ describe('Behaviour PATCH /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour PATCH /leesplank/origineel', function () {
+describe('Behaviour: PATCH /leesplank/origineel', function () {
     it('should return an error when trying to patch a non-existing object', function (done) {
         request(app)
             .patch('/leesplank/origineel')
@@ -540,7 +540,7 @@ describe('Behaviour PATCH /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour GET /leesplank/origineel', function () {
+describe('Behaviour: GET /leesplank/origineel', function () {
     it('should return the PATCHed object from the previous test', function (done) {
         request(app)
             .get('/leesplank/origineel?id=Zus')
@@ -556,7 +556,7 @@ describe('Behaviour GET /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour PATCH /leesplank/origineel', function () {
+describe('Behaviour: PATCH /leesplank/origineel', function () {
     it('should return 400 on a malformed PATCH request', function (done) {
         request(app)
             .patch('/leesplank/origineel?id=Zus')
@@ -573,7 +573,7 @@ describe('Behaviour PATCH /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour PATCH /leesplank/origineel', function () {
+describe('Behaviour: PATCH /leesplank/origineel', function () {
     it('should return 400 on a malformed PATCH request', function (done) {
         request(app)
             .patch('/leesplank/origineel?id=Zus')
@@ -588,7 +588,7 @@ describe('Behaviour PATCH /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour GET /leesplank/origineel?returnType=array', function () {
+describe('Behaviour: GET /leesplank/origineel?returnType=array', function () {
     it('should return an array', function (done) {
         request(app)
             .get('/leesplank/origineel?returnType=array')
@@ -602,7 +602,7 @@ describe('Behaviour GET /leesplank/origineel?returnType=array', function () {
     })
 })
 
-describe('Behaviour GET /leesplank/origineel?returnType=object', function () {
+describe('Behaviour: GET /leesplank/origineel?returnType=object', function () {
     it('should not return an array', function (done) {
         request(app)
             .get('/leesplank/origineel?returnType=object')
@@ -616,7 +616,7 @@ describe('Behaviour GET /leesplank/origineel?returnType=object', function () {
     })
 })
 
-describe('Behaviour GET /leesplank/origineel?returnType=checkpoint', function () {
+describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint', function () {
     it('should return a checkpoint object', function (done) {
         request(app)
             .get('/leesplank/origineel?returnType=checkpoint')
@@ -631,7 +631,7 @@ describe('Behaviour GET /leesplank/origineel?returnType=checkpoint', function ()
     })
 })
 
-describe('Behaviour GET /leesplank/origineel?returnType=checkpoint&id=Noot', function () {
+describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint&id=Noot', function () {
     it('should return a checkpoint object', function (done) {
         request(app)
             .get('/leesplank/origineel?returnType=checkpoint&id=Noot')
@@ -645,7 +645,7 @@ describe('Behaviour GET /leesplank/origineel?returnType=checkpoint&id=Noot', fun
     })
 })
 
-describe('Behaviour GET /leesplank/origineel?returnType=checkpoint&filter=id=="Noot"', function () {
+describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint&filter=id=="Noot"', function () {
     it('should return a checkpoint object', function (done) {
         request(app)
             .get('/leesplank/origineel?returnType=checkpoint&filter=id=="Noot"')
@@ -659,7 +659,7 @@ describe('Behaviour GET /leesplank/origineel?returnType=checkpoint&filter=id=="N
     })
 })
 
-describe('Behaviour GET /leesplank/origineel?fromOpLogId=100', function () {
+describe('Behaviour: GET /leesplank/origineel?fromOpLogId=100', function () {
     it('should return a 400 when requesting an nonexisting oplogId', function (done) {
         request(app)
             .get('/leesplank/origineel?fromOpLogId=aap')
@@ -669,7 +669,7 @@ describe('Behaviour GET /leesplank/origineel?fromOpLogId=100', function () {
     })
 })
 
-describe('Behaviour GET /leesplank/origineel?fromOpLogId=1', function () {
+describe('Behaviour: GET /leesplank/origineel?fromOpLogId=1', function () {
     it('should return an array with operations when requesting a proper oplogId', function (done) {
         request(app)
             .get('/leesplank/origineel?fromOpLogId=1')
@@ -685,7 +685,7 @@ describe('Behaviour GET /leesplank/origineel?fromOpLogId=1', function () {
     })
 })
 
-describe('Behaviour GET /leesplank/origineel?fromOpLogId=1 filtered', function () {
+describe('Behaviour: GET /leesplank/origineel?fromOpLogId=1 filtered', function () {
     it('should return an array with filtered operations when requesting a proper oplogId', function (done) {
         request(app)
             .get('/leesplank/origineel?fromOpLogId=1&filter=id=="Jet"')
@@ -702,7 +702,7 @@ describe('Behaviour GET /leesplank/origineel?fromOpLogId=1 filtered', function (
     })
 })
 
-describe('Behaviour GET /leesplank/origineel?fromOpLogId=1 filtered', function () {
+describe('Behaviour: GET /leesplank/origineel?fromOpLogId=1 filtered', function () {
     it('should return an array with filtered operations when requesting a proper oplogId', function (done) {
         request(app)
             .get('/leesplank/origineel?fromOpLogId=1&id=Jet')
@@ -792,7 +792,7 @@ describe("Behaviour garbageCollector command", function () {
     })
 })
 
-describe('Behaviour POST /leesplank/silent?returnType=tally', function () {
+describe('Behaviour: POST /leesplank/silent?returnType=tally', function () {
     it('should return number of objects in payload', function (done) {
         request(app)
             .post('/leesplank/silent?returnType=tally')
@@ -810,7 +810,7 @@ describe('Behaviour POST /leesplank/silent?returnType=tally', function () {
             .end(done)
     })
 })
-describe('Behaviour PUT /leesplank/silent?returnType=tally', function () {
+describe('Behaviour: PUT /leesplank/silent?returnType=tally', function () {
     it('should return number of objects in payload', function (done) {
         request(app)
             .put('/leesplank/silent?returnType=tally')
@@ -828,7 +828,7 @@ describe('Behaviour PUT /leesplank/silent?returnType=tally', function () {
             .end(done)
     })
 })
-describe('Behaviour DELETE /leesplank/silent?returnType=tally', function () {
+describe('Behaviour: DELETE /leesplank/silent?returnType=tally', function () {
     it('should return number of deleted objects', function (done) {
         request(app)
             .delete('/leesplank/silent?returnType=tally')
@@ -846,7 +846,7 @@ describe('Behaviour DELETE /leesplank/silent?returnType=tally', function () {
     })
 })
 
-describe('Behaviour PATCH /leesplank/silent', function () {
+describe('Behaviour: PATCH /leesplank/silent', function () {
     it('should return the number of PATCHed objects', function (done) {
         request(app)
             .patch('/leesplank/silent?returnType=tally')
@@ -932,7 +932,7 @@ describe("Implementation POST /leesplank", function () {
     })
 })
 
-describe('Behaviour POST /leesplank/array?returnType=tally', function () {
+describe('Behaviour: POST /leesplank/array?returnType=tally', function () {
     it('should return numbers of objects in payload', function (done) {
         request(app)
             .post('/leesplank/array?returnType=tally')
@@ -950,7 +950,7 @@ describe('Behaviour POST /leesplank/array?returnType=tally', function () {
             .end(done)
     })
 })
-describe('Behaviour POST /leesplank/array?returnType=tally', function () {
+describe('Behaviour: POST /leesplank/array?returnType=tally', function () {
     it('should return numbers of objects in payload', function (done) {
         request(app)
             .post('/leesplank/array?returnType=tally')
@@ -968,7 +968,7 @@ describe('Behaviour POST /leesplank/array?returnType=tally', function () {
             .end(done)
     })
 })
-describe('Behaviour POST /leesplank/array?returnType=tally', function () {
+describe('Behaviour: POST /leesplank/array?returnType=tally', function () {
     it('should return numbers of objects in payload, ignoring duplicates', function (done) {
         request(app)
             .post('/leesplank/array?returnType=tally')
@@ -986,7 +986,7 @@ describe('Behaviour POST /leesplank/array?returnType=tally', function () {
             .end(done)
     })
 })
-describe('Behaviour GET /leesplank/array', function () {
+describe('Behaviour: GET /leesplank/array', function () {
     it('should return objects in array', function (done) {
         request(app)
             .get('/leesplank/array')
@@ -1000,7 +1000,7 @@ describe('Behaviour GET /leesplank/array', function () {
             .end(done)
     })
 })
-describe('Behaviour GET /leesplank/array?returnType=checkpoint', function () {
+describe('Behaviour: GET /leesplank/array?returnType=checkpoint', function () {
     it('should return a checkpoint object with storageType array', function (done) {
         request(app)
             .get('/leesplank/array?returnType=checkpoint')
@@ -1015,7 +1015,7 @@ describe('Behaviour GET /leesplank/array?returnType=checkpoint', function () {
             .end(done)
     })
 })
-describe('Behaviour HEAD /leesplank/array?fromOpLogId=1', function () {
+describe('Behaviour: HEAD /leesplank/array?fromOpLogId=1', function () {
     it('should return 200 even on a non-existing collection', function (done) {
         request(app)
             .head('/leesplank/notthere?fromOpLogId=1')
@@ -1025,7 +1025,7 @@ describe('Behaviour HEAD /leesplank/array?fromOpLogId=1', function () {
     })
 })
 
-describe('Behaviour HEAD /leesplank/array?fromOpLogId=1', function () {
+describe('Behaviour: HEAD /leesplank/array?fromOpLogId=1', function () {
     it('should return predictable x-headers', function (done) {
         request(app)
             .head('/leesplank/array?fromOpLogId=1')
@@ -1039,7 +1039,7 @@ describe('Behaviour HEAD /leesplank/array?fromOpLogId=1', function () {
             .end(done)
     })
 })
-describe('Behaviour GET /leesplank/array?fromOpLogId=1', function () {
+describe('Behaviour: GET /leesplank/array?fromOpLogId=1', function () {
     it('should return an array with operations when requesting a proper oplogId', function (done) {
         request(app)
             .get('/leesplank/array?fromOpLogId=1')
@@ -1054,7 +1054,7 @@ describe('Behaviour GET /leesplank/array?fromOpLogId=1', function () {
             .end(done)
     })
 })
-describe('Behaviour GET /leesplank/array?fromOpLogId=1&filter=faulty=*=3', function () {
+describe('Behaviour: GET /leesplank/array?fromOpLogId=1&filter=faulty=*=3', function () {
     it('should give an error when retrieving oplog with a faulty filter', function (done) {
         request(app)
             .get('/leesplank/array?fromOpLogId=1&filter=faulty=*=3')
@@ -1096,7 +1096,7 @@ describe("Implementation POST /leesplank", function () {
     })
 })
 
-describe('Behaviour GET /leesplank/array', function () {
+describe('Behaviour: GET /leesplank/array', function () {
     it('should return objects in array', function (done) {
         request(app)
             .get('/leesplank/array')
@@ -1110,7 +1110,7 @@ describe('Behaviour GET /leesplank/array', function () {
             .end(done)
     })
 })
-describe('Behaviour DELETE /leesplank/array', function () {
+describe('Behaviour: DELETE /leesplank/array', function () {
     it('should return a 409', function (done) {
         request(app)
             .delete('/leesplank/array')
@@ -1121,7 +1121,7 @@ describe('Behaviour DELETE /leesplank/array', function () {
             .end(done)
     })
 })
-describe('Behaviour UPDATE /leesplank/array', function () {
+describe('Behaviour: UPDATE /leesplank/array', function () {
     it('should return a 409', function (done) {
         request(app)
             .put('/leesplank/array')
@@ -1132,7 +1132,7 @@ describe('Behaviour UPDATE /leesplank/array', function () {
             .end(done)
     })
 })
-describe('Behaviour PATCH /leesplank/array', function () {
+describe('Behaviour: PATCH /leesplank/array', function () {
     it('should return an error', function (done) {
         request(app)
             .patch('/leesplank/array')
@@ -1149,7 +1149,7 @@ describe('Behaviour PATCH /leesplank/array', function () {
             .end(done)
     })
 })
-describe('Behaviour POST /leesplank/genids', function () {
+describe('Behaviour: POST /leesplank/genids', function () {
     it('should return a generated ID', function (done) {
         request(app)
             .post('/leesplank/genids')
@@ -1166,7 +1166,7 @@ describe('Behaviour POST /leesplank/genids', function () {
             .end(done)
     })
 })
-describe('Behaviour GET /leesplank/notthere', function () {
+describe('Behaviour: GET /leesplank/notthere', function () {
     it('should return a 200 when trying to retrieve from noexisting collection.', function (done) {
         request(app)
             .get('/leesplank/notthere')
@@ -1202,7 +1202,7 @@ describe("Behaviour after POSTing a complex object", function () {
     })
 })
 
-describe('Behaviour GET /leesplank/complex (filtered by nonexisting property)', function () {
+describe('Behaviour: GET /leesplank/complex (filtered by nonexisting property)', function () {
     it('should return nothing.', function (done) {
         request(app)
             .get('/leesplank/complex?filter=tiles.mies=="De poes"')
@@ -1215,7 +1215,7 @@ describe('Behaviour GET /leesplank/complex (filtered by nonexisting property)', 
     })
 })
 
-describe('Behaviour GET /leesplank/complex (filtered by property)', function () {
+describe('Behaviour: GET /leesplank/complex (filtered by property)', function () {
     it('should return nothing.', function (done) {
         request(app)
             .get('/leesplank/complex?filter=tiles.aap=="Een dier met een staart."')
@@ -1227,7 +1227,7 @@ describe('Behaviour GET /leesplank/complex (filtered by property)', function () 
             .end(done)
     })
 })
-describe('Behaviour PUT /leesplank/origineel', function () {
+describe('Behaviour: PUT /leesplank/origineel', function () {
     it('should return the error from a hook when the hook throws an error.', function (done) {
         request(app)
             .put('/leesplank/origineel?letPutHookFail=true')

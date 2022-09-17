@@ -38,7 +38,7 @@ app.use("/leesplank", startupDB.db({
 
 const server = app.listen(3456);
 
-describe("Implementation POST /leesplank/origineel", function () {
+describe("Implementation: POST /leesplank/origineel", function () {
     it("should create an oplog file", function (done) {
         request(app)
             .post("/leesplank/origineel")
@@ -66,7 +66,7 @@ describe("Implementation POST /leesplank/origineel", function () {
     })
 })
 
-describe("Implementation POST /leesplank/nieuw", function () {
+describe("Implementation: POST /leesplank/nieuw", function () {
     it("should create an oplog file", function (done) {
         request(app)
             .post("/leesplank/nieuw")
@@ -93,7 +93,7 @@ describe("Implementation POST /leesplank/nieuw", function () {
     })
 })
 
-describe("Implementation POST /leesplank (flush origineel )", function () {
+describe("Implementation: POST /leesplank (flush origineel )", function () {
     it("should create a checkpoint file when there are unflushed documents", function (done) {
         request(app)
             .post("/leesplank")
@@ -121,7 +121,7 @@ describe("Implementation POST /leesplank (flush origineel )", function () {
     })
 })
 
-describe("Implementation POST /leesplank (flush nieuw)", function () {
+describe("Implementation: POST /leesplank (flush nieuw)", function () {
     it("should create a checkpoint file when there are unflushed documents", function (done) {
         request(app)
             .post("/leesplank")
@@ -135,7 +135,7 @@ describe("Implementation POST /leesplank (flush nieuw)", function () {
     })
 })
 
-describe("Implementation POST /leesplank/origineel", function () {
+describe("Implementation: POST /leesplank/origineel", function () {
     it("should return the POSTed body 1", function (done) {
         request(app)
             .post("/leesplank/origineel")
@@ -162,7 +162,7 @@ describe("Implementation POST /leesplank/origineel", function () {
     })
 })
 
-describe("Implementation POST /leesplank", function () {
+describe("Implementation: POST /leesplank", function () {
     it("executing a flush command with an existing checkpoint should create a new checkpoint file when there are unflushed documents", function (done) {
         request(app)
             .post("/leesplank")
@@ -178,7 +178,7 @@ describe("Implementation POST /leesplank", function () {
     })
 })
 
-describe("Implementation DELETE /leesplank/origineel", function () {
+describe("Implementation: DELETE /leesplank/origineel", function () {
     it("should store the DELETEd body in the opLog", function (done) {
         request(app)
             .delete("/leesplank/origineel")
@@ -201,7 +201,7 @@ describe("Implementation DELETE /leesplank/origineel", function () {
     })
 })
 
-describe("Implementation PUT /leesplank/origineel", function () {
+describe("Implementation: PUT /leesplank/origineel", function () {
     it("should store the PUT body in the opLog", function (done) {
         request(app)
             .put("/leesplank/origineel")
@@ -273,7 +273,7 @@ describe('Implementation PATCH /leesplank/origineel', function () {
     })
 })
 
-describe("Implementation POST /leesplank", function () {
+describe("Implementation: POST /leesplank", function () {
     it("executing a purgeOplog command to revert back to the last flushed state of the collection", function (done) {
         request(app)
             .post("/leesplank")
@@ -325,7 +325,7 @@ describe('Implementation POST /leesplank/dropThisCollection', function () {
     })
 })
 
-describe("Implementation flush command ", function () {
+describe("Implementation: flush command ", function () {
     it("Flush command should return a 200, ", function (done) {
         request(app)
             .post("/leesplank")
@@ -358,7 +358,7 @@ describe('Implementation POST /leesplank/dropThisCollection', function () {
     })
 })
 
-describe("Implementation drop command ", function () {
+describe("Implementation: drop command ", function () {
     it("Drop command should return a 200 ", function (done) {
         request(app)
             .post("/leesplank")

@@ -59,7 +59,7 @@ bigdata = function () {
 const blob = bigdata()
 let testCounter = 0
 for (test = 0; test < 10; test++) {
-    describe("Implementation POST BIG DATA " + test + " /leesplank/test", function () {
+    describe("Implementation: POST BIG DATA " + test + " /leesplank/test", function () {
         this.timeout(50000)
         it("should return the POSTed body", function (done) {
             request(app)
@@ -75,7 +75,7 @@ for (test = 0; test < 10; test++) {
     })
 }
 
-describe("Implementation flush", function () {
+describe("Implementation: flush", function () {
     this.timeout(60000)
     it("executing a flush command with an existing checkpoint should create a new checkpoint file when there are unflushed documents", function (done) {
         request(app)
@@ -91,7 +91,7 @@ describe("Implementation flush", function () {
 
 
 
-describe("Implementation garbageCollector", function () {
+describe("Implementation: garbageCollector", function () {
     this.timeout(60000)
     it("executing a garbageCollector command should not impact future operations", function (done) {
         request(app)
@@ -105,7 +105,7 @@ describe("Implementation garbageCollector", function () {
     })
 })
 
-describe("Implementation nonexisting command", function () {
+describe("Implementation: nonexisting command", function () {
     this.timeout(60000)
     it("executing a nonexisting command should result in an error", function (done) {
         request(app)
@@ -131,7 +131,7 @@ describe('Implementation GET /leesplank/origineel', function () {
     })
 })
 
-describe("Implementation garbageCollector", function () {
+describe("Implementation: garbageCollector", function () {
     this.timeout(60000)
     it("executing a garbageCollector command should not impact future operations", function (done) {
         request(app)

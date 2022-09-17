@@ -8,8 +8,8 @@
     "url": "https://github.com/bitsplitter/startupDB.git"
   },
   "scripts": {
-    "test-behaviour": "mocha ./test/behaviour.js ",
-    "test": "mocha ./test/behaviour.js && mocha ./test/implementation0.js && mocha ./test/implementation1.js && mocha ./test/implementation2.js",
+    "test-behaviour": "mocha ./test/behaviour0.js && mocha ./test/behaviour1.js ",
+    "test": "mocha ./test/behaviour0.js && mocha ./test/implementation0.js && mocha ./test/implementation1.js && mocha ./test/behaviour1.js",
     "coverage": "nyc npm run test",
     "build": "tsc -p tsconfig.json"
   },
