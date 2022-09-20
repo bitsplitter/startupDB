@@ -67,7 +67,10 @@ import tools from './tools'
 */
 
 const startupDB: Database = {} // This is where we keep the database in memory
-let usedBytesInMemory = 0
+// It's hard to calculate the memory footprint of JSON objects in memory, the best we can do is estimations
+// and recalculate when we veer off course too much
+let usedBytesInMemory = 0 // Keeps track of the total memory ised by the database. 
+
 /** 
  * DB_CACHE_OVERHEAD_RATIO: 
  * Ratio of stringified vs. in-memory objects 
@@ -82,7 +85,7 @@ let usedBytesInMemory = 0
 const DB_CACHE_OVERHEAD_RATIO = 2     // TODO: Make configurable
 const DB_CACHE_FRACTION = 80 / 100    // Fraction of memory to use for Database cache, leave the rest for API and NodeJS. TODO: Make configurable
 const MAX_BYTES_IN_MEMORY = parseInt("" + (v8.getHeapStatistics().heap_size_limit * DB_CACHE_FRACTION / DB_CACHE_OVERHEAD_RATIO))
-
+const GC_SWEEP_PERCENTAGE = 20 // Percentage of memory to sweep to prevent the GC to kick in too frequently
 
 const propFunction = function (propertyName: string, get: (arg0: string) => any, obj: any) {
   const positionOfDot = propertyName.indexOf(".")
@@ -277,6 +280,16 @@ const writeOperationToOpLog = async function (operation: Operation, db: DBConfig
   persist.writeFileSync('./oplog/' + collection, oplogId + '.json', JSON.stringify(operation), db)
 }
 
+const calculateMemoryFootprint = function (collectionNames: string[]) {
+  return collectionNames.reduce((acc, collection) => {
+    if (startupDB[collection]?.options?.storageType == 'array') {
+      const array = <ArrayOfDBDataObjects>startupDB[collection].data
+      return array.reduce((acc, item) => acc + JSON.stringify(item).length, 0)
+    }
+    else return acc + JSON.stringify(startupDB[collection].data).length
+  }, 0)
+}
+
 const startupDBGC = function (options: any): number {
   let deletedCollections = 0
   const threshold = options?.testing ? 1024 : MAX_BYTES_IN_MEMORY
@@ -289,12 +302,10 @@ const startupDBGC = function (options: any): number {
   // Recalculate usedBytesInMemory when low on memory with few resources in cache.
   // This is an indication that usedBytesInMemory is too far off with reality.
   // This causes too many cache evictions.
-  // Recalculation is relatively cheap because of the small number of resources to recalculate
+  // Recalculation is relatively cheap here because of the small number of resources to recalculate
 
-  if (usedBytesInMemory > threshold * .8 && orderedCollections.length < 100) {
-    usedBytesInMemory = orderedCollections.reduce((acc, item) => acc + JSON.stringify(startupDB[item.collection].data).length, 0)
-    console.log('RECALCULATED MEMORY FOOTPRINT')
-  }
+  if (usedBytesInMemory > threshold * (100 - GC_SWEEP_PERCENTAGE) / 100 && orderedCollections.length < 100)
+    usedBytesInMemory = calculateMemoryFootprint(orderedCollections.map(o => o.collection))
 
   let indexOfCollectionToDelete = 0
   do {
@@ -308,7 +319,10 @@ const startupDBGC = function (options: any): number {
       delete startupDB[collectionToDelete]
       deletedCollections++
     }
-  } while (usedBytesInMemory >= threshold && indexOfCollectionToDelete < orderedCollections.length)
+  } while (usedBytesInMemory >= threshold * (100 - GC_SWEEP_PERCENTAGE) / 100 && indexOfCollectionToDelete < orderedCollections.length)
+  // If the cleanupsweep removed so much as to bring usedBytesInMemory under what we aimed to remove,
+  // our memory heuristic might be off track, recalculate
+  if (usedBytesInMemory < threshold * (GC_SWEEP_PERCENTAGE) / 100) usedBytesInMemory = calculateMemoryFootprint(orderedCollections.map(o => o.collection))
   return deletedCollections
 }
 

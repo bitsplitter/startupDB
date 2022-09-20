@@ -1176,14 +1176,14 @@ describe('Behaviour: GET /leesplank/notthere', function () {
 })
 
 describe("Behaviour after POST", function () {
-    it("leastRecentlyUsed collection should be /Users/jeroen/startupDB/leesplank/reject)", function (done) {
+    it("leastRecentlyUsed collection should be /Users/jeroen/startupDB/leesplank/origineel)", function (done) {
         request(app)
             .post("/leesplank")
             .set("Content-type", "application/json")
             .send({ "command": "inspect" })
             .expect(200)
             .expect(function (res) {
-                assert.include(res.body.leastRecentlyUsed.collection, '/startupDB/leesplank/silent')
+                assert.include(res.body.leastRecentlyUsed.collection, '/startupDB/leesplank/origineel')
             })
             .end(done)
     })

@@ -60,6 +60,7 @@ const create = async function (req: Req, commandParameters: DBCommandParameters,
         console.log(err)
     }
     startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
+    startupDB[collectionId].lastAccessed = (new Date()).getTime()
     if (commandParameters.options) startupDB[collectionId].options = commandParameters.options
     if (commandParameters.options?.storageType == 'array') startupDB[collectionId].data = []
     const serialized = JSON.stringify(startupDB[collectionId])
