@@ -277,7 +277,11 @@ const writeOperationToOpLog = async function (operation: Operation, db: DBConfig
     "unixTimeStamp": unixTimestamp,
     "timeStamp": timestamp
   }
-  persist.writeFileSync('./oplog/' + collection, oplogId + '.json', JSON.stringify(operation), db)
+  const mutex: MutexInterface = startupDB[collectionId]?.lock
+  const release = await mutex.acquire()
+
+  await persist.writeFile('./oplog/' + collection, oplogId + '.json', JSON.stringify(operation), db)
+  release()
 }
 
 const calculateMemoryFootprint = function (collectionNames: string[]) {
