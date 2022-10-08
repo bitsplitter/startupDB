@@ -1254,7 +1254,6 @@ describe('Behaviour: POST /leesplank/noTimeStamps', function () {
             .expect(200)
             .expect('Content-Type', 'application/json; charset=utf-8')
             .expect(function (res) {
-                console.log('res.body', res.body)
                 assert.strictEqual(res.body[0].id, "Aap")
                 assert.strictEqual(res.body[1].id, "Noot")
                 assert.strictEqual(res.body[2].id, "Mies")
