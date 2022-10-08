@@ -552,10 +552,6 @@ const dbUpdateObjects = async function (db: DBConfig, collection: string, payloa
 
   if (startupDB[collectionId]?.options?.storageType == 'array') return { "statusCode": 409, "message": { "error": "Cannot update an array collection", "errorId": "S7lC7Y1ffWp8" } }
   addIdsToItemsThatHaveNone(payload)
-  if (typeof db.options.validator == 'function') {
-    const errors = validateDocuments(db.options.validator, collection, payload)
-    if (errors.statusCode > 0) return errors
-  }
 
   const oldData = getObjectsForIdsInPayload(payload, startupDB[collectionId].data)
   if (typeof db.options.addTimeStamps == 'function') {
@@ -563,6 +559,10 @@ const dbUpdateObjects = async function (db: DBConfig, collection: string, payloa
     for (const item of payload)
       if (!startupDB[collectionId].data[item.id]) addTimeStamps('created', item)
       else addTimeStamps('modified', item, startupDB[collectionId].data[item.id])
+  }
+  if (typeof db.options.validator == 'function') {
+    const errors = validateDocuments(db.options.validator, collection, payload)
+    if (errors.statusCode > 0) return errors
   }
   const operation = {
     "operation": "update",

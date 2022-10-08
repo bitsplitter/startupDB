@@ -78,6 +78,10 @@ app.use("/leesplank", startupDB.db({
     "validator": function (collection, documents) {
         const serializePayload = JSON.stringify(documents)
         if (serializePayload.includes('Throw me an error')) throw ('Error')
+        if (collection == "noTimeStamps") documents.forEach((d) => {
+            delete d.__created
+            delete d.__modified
+        })
         return serializePayload.includes('reject this document')
     }
 }))
@@ -1233,6 +1237,30 @@ describe('Behaviour: PUT /leesplank/origineel', function () {
             .put('/leesplank/origineel?letPutHookFail=true')
             .send({})
             .expect(500)
+            .end(done)
+    })
+})
+
+describe('Behaviour: POST /leesplank/noTimeStamps', function () {
+    it('should return documents without timestamps, asserts that validator runs after addTimeStamp', function (done) {
+        request(app)
+            .post('/leesplank/noTimeStamps')
+            .set('Content-type', 'application/json')
+            .send([
+                { "id": "Aap", "description": "Een dier met een staart." },
+                { "id": "Noot", "description": "Een harde vrucht." },
+                { "id": "Mies", "description": "De poes." }
+            ])
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect(function (res) {
+                console.log('res.body', res.body)
+                assert.strictEqual(res.body[0].id, "Aap")
+                assert.strictEqual(res.body[1].id, "Noot")
+                assert.strictEqual(res.body[2].id, "Mies")
+                assert.strictEqual(res.body[0].__created, undefined)
+                assert.strictEqual(res.body[0].__modified, undefined)
+            })
             .end(done)
     })
 })
