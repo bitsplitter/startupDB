@@ -17,10 +17,10 @@ const writeFile = async function (dirName: string, fileName: string, payload: st
         fs.writeFile(path.join(rootDir, dirName, fileName), payload, 'utf8')
     })
     fs.ensureDirSync(path.join(db.dataFiles, dirName))
-    return fs.writeFile(path.join(db.dataFiles, dirName, fileName), payload, 'utf8')
+    return await fs.writeFile(path.join(db.dataFiles, dirName, fileName), payload, 'utf8')
 }
 const readFile = async function (dirName: string, fileName: string, db: DBConfig) {
-    return fs.readFile(path.join(db.dataFiles, dirName, fileName))
+    return await fs.readFile(path.join(db.dataFiles, dirName, fileName))
 }
 const readdir = async function (dirName: string, db: DBConfig) {
     try {
