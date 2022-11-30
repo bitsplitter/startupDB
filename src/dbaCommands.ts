@@ -107,11 +107,28 @@ const drop = async function (req: Req, commandParameters: DBCommandParameters, {
 const purgeOplog = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, initStartupDB }) {
     const collection = commandParameters.collection
     if (!collection) return { "statusCode": 400, "message": { "error": "No collection specified", "errorId": "CIvNZ51YQM6q" } }
+    if (collection == '*') {
+        if (!persist.rmdirSync('./oplog', req.startupDB)) return { "statusCode": 500, "message": { "error": "Cannot remove files from oplog", "errorId": "WLmnUdhzwJ8s" } }
+        for (const collectionId in startupDB) startupDB[collectionId] = {}
+        return { "response": "OK" }
+    }
     const dataFiles = req.startupDB.dataFiles
     const collectionId = dataFiles + '/' + collection
     if (!persist.rmdirSync('./oplog/' + collection, req.startupDB)) return { "statusCode": 500, "message": { "error": "Cannot remove files from oplog", "errorId": "J8nUdhzWLmws" } }
     startupDB[collectionId] = {}
     await initStartupDB(req.startupDB, collection)
+    return { "response": "OK" }
+}
+const clearCache = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, initStartupDB }) {
+    const collection = commandParameters.collection
+    if (!collection) return { "statusCode": 400, "message": { "error": "No collection specified", "errorId": "CIvNZ51YQM6q" } }
+    if (collection == '*') {
+        for (const collectionId in startupDB) startupDB[collectionId] = {}
+        return { "response": "OK" }
+    }
+    const dataFiles = req.startupDB.dataFiles
+    const collectionId = dataFiles + '/' + collection
+    startupDB[collectionId] = {}
     return { "response": "OK" }
 }
 const garbageCollector = async function (req: Req, commandParameters: DBCommandParameters, { startupDBGC }) {
@@ -174,5 +191,6 @@ export default {
     garbageCollector,
     inspect,
     list,
-    purgeOplog
+    purgeOplog,
+    clearCache
 }

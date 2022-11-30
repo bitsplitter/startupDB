@@ -1078,7 +1078,7 @@ describe("Implementation POST /leesplank", function () {
             .end(done)
     })
 })
-describe("Implementation POST /leesplank", function () {
+describe("Behaviour: purgeOplog", function () {
     it("executing a purgeOplog command with storageType='array' reloads the checkpoint", function (done) {
         request(app)
             .post("/leesplank")
@@ -1089,7 +1089,7 @@ describe("Implementation POST /leesplank", function () {
     })
 })
 
-describe("Implementation POST /leesplank", function () {
+describe("Behaviour: purgeOplog", function () {
     it("executing a purgeOplog command without a collection should return a 400", function (done) {
         request(app)
             .post("/leesplank")
@@ -1262,6 +1262,29 @@ describe('Behaviour: POST /leesplank/noTimeStamps', function () {
             })
             .end(done)
     })
+    describe("Behaviour: clearCache", function () {
+        it("executing a clearCache command without a collection should return a 400", function (done) {
+            request(app)
+                .post("/leesplank")
+                .set("Content-type", "application/json")
+                .send({ "command": "clearCache" })
+                .expect(400)
+                .end(done)
+        })
+    })
+
+    describe("Behaviour: clearCache", function () {
+        it("executing a clearCache command with a collection should return a 200", function (done) {
+            request(app)
+                .post("/leesplank")
+                .set("Content-type", "application/json")
+                .send({ "command": "clearCache", "collection": "origineel" })
+                .expect(200)
+                .end(done)
+        })
+    })
+
+
 })
 
 
