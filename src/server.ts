@@ -286,7 +286,7 @@ const writeOperationToOpLog = async function (operation: Operation, db: DBConfig
 
 const calculateMemoryFootprint = function (collectionNames: string[]) {
   return collectionNames.reduce((acc, collection) => {
-    if (!startupDB[collection]) return 0
+    if (!startupDB[collection] || !startupDB[collection].data) return 0
     if (startupDB[collection]?.options?.storageType == 'array') {
       const array = <ArrayOfDBDataObjects>startupDB[collection].data
       return array.reduce((acc, item) => acc + JSON.stringify(item).length, 0)
