@@ -3,8 +3,6 @@ import persist from './persistence'
 import tools from './tools'
 import debug from 'debug'
 const debugLogger = debug('startupdb')
-import chalk from 'chalk'
-const logError = chalk.red
 
 /**
  * Move all files in an oplog folder to it's accompanying archive folder
@@ -36,14 +34,14 @@ const flush = async function (req: Req, commandParameters: DBCommandParameters, 
         const serialized = JSON.stringify(startupDB[collectionId])
         bufferToPersist = serialized
     } catch (err) {
-        debugLogger(logError(err))
+        debugLogger(err)
         return { "statusCode": 500, "message": { "error": "Cannot serialize checkpoint, object too large?", "errorId": "RKdCqPkPyr7p" } }
     }
 
     try {
         await persist.writeFile('./checkpoint/' + collection, 'latest.json', bufferToPersist, req.startupDB)
     } catch (err) {
-        debugLogger(logError(err))
+        debugLogger(err)
         return { "statusCode": 500, "message": { "error": "Cannot save checkpoint", "errorId": "Wms3x0goxHni" } }
     }
     if (req.startupDB.options.opLogArchive != undefined) moveOpLog(collection, oldCheckPoint, newCheckPoint, req.startupDB)

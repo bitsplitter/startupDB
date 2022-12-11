@@ -8,8 +8,6 @@ import jsonPatch from 'fast-json-patch'
 import { Mutex, MutexInterface } from 'async-mutex'
 import util from 'util';
 const debugLogger = util.debuglog('startupdb');
-import chalk from 'chalk'
-const logInfo = chalk.blue
 import persist from './persistence'
 import dbaCommands from './dbaCommands'
 import tools from './tools'
@@ -227,7 +225,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
   // We got the lock so we know we're the only one running this code now.
   // First check if the data we're after isn't already there (then someone else had the lock first and finished the work and we don't do anything)
   if (startupDB[collectionId].nextOpLogId == 1) {
-    debugLogger(logInfo('Locked ' + collection))
+    debugLogger('Locked ' + collection)
     try {
       const raw = <string><unknown>await persist.readFile(dataDirectory, 'latest.json', db)
       const latest = raw.toString()
@@ -250,10 +248,10 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
       applyCRUDoperation(operation, db)
     })
   } else {
-    debugLogger(logInfo('Locked... no need to retrieve', collection))
+    debugLogger('Locked... no need to retrieve', collection)
   }
   release() // Release the lock!
-  debugLogger(logInfo('Released ' + collection))
+  debugLogger('Released ' + collection)
 }
 
 const loadCollection = async function (db: DBConfig, collection: string) {

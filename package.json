@@ -30,7 +30,6 @@
   },
   "dependencies": {
     "async-mutex": "^0.3.2",
-    "chalk": "^4.1.2",
     "fast-json-patch": "^3.1.0",
     "filtrex": "^2.2.3",
     "fs-extra": "^10.0.0",
