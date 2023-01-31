@@ -1,6 +1,6 @@
 {
   "name": "startupdb",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "description": "a filebased database for Express",
   "main": "dist/server.js",
   "repository": {
