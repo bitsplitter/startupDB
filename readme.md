@@ -142,4 +142,4 @@ curl --header "Content-Type: application/json" \
 | ensureCollection | POST | Create collection if it does not exist, no error if it does. | collection:"string", storageType:"array" or "object" |
 | flush | POST | Create checkpoint and flush oplog. | collection:"string" |
 | inspect | POST | return totalNrObjects in memory. | |
-| purgeOplog | POST | remove all operations from opLog, restoring collection to previous checkpoint. This is usefull for implementating tests. | collection:"string" |
+| purgeOplog | POST | remove all operations from opLog, restoring collection to previous checkpoint. This is usefull for implementing tests. Collection parameter can be "*" to purge all collections or a comma separated string of collections. | collection:"string" |
