@@ -149,7 +149,7 @@ crud.update = function (operation: Operation, collectionId: string) {
 }
 crud.patch = function (operation: Operation, collectionId: string, db: DBConfig) {
   for (const item of operation.data) {
-    const document = <DBDataObject>tools.deepCopy(startupDB[collectionId].data[item.id])
+    const document = <DBDataObject>tools.deepCopy(startupDB[collectionId].data[item.id] || {})
     let patchedDocument = document
     try {
       if (item.patch) jsonPatch.applyPatch(document, item.patch).newDocument

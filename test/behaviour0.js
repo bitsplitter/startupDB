@@ -549,7 +549,7 @@ describe('Behaviour: PATCH /leesplank/origineel', function () {
 })
 
 describe('Behaviour: PATCH /leesplank/origineel', function () {
-    it('should return an error when trying to patch a non-existing object', function (done) {
+    it('should return OK when trying to patch a non-existing object', function (done) {
         request(app)
             .patch('/leesplank/origineel')
             .set('Content-type', 'application/json')
@@ -561,7 +561,7 @@ describe('Behaviour: PATCH /leesplank/origineel', function () {
                 },
                 { "id": "Jet", "patch": [] }
             ])
-            .expect(400)
+            .expect(200)
             .expect('Content-Type', 'application/json; charset=utf-8')
             .end(done)
     })
@@ -750,7 +750,7 @@ describe("Behaviour GET command", function () {
             .expect(200)
             .expect({
                 "collections": [
-                    { "name": "origineel", "inCache": true, "count": 5, "checkPoint": 0, "lastOplogId": 0 },
+                    { "name": "origineel", "inCache": true, "count": 6, "checkPoint": 0, "lastOplogId": 0 },
                     { "name": "reject", "inCache": true, "count": 0, "checkPoint": 0, "lastOplogId": 0 }
                 ]
             })
