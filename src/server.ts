@@ -596,7 +596,7 @@ const dbPatchObjects = async function (db: DBConfig, collection: string, payload
   await loadCollection(db, collection)
 
   if (startupDB[collectionId]?.options?.storageType == 'array') return { "statusCode": 409, "message": { "error": "Cannot apply patch to an array collection", "errorId": "ZCssBbz1nevT" } }
-  if (!allObjectIdsExistInCollection(payload, startupDB[collectionId].data)) return { "statusCode": 400, "message": { "error": "Could not find all id's", "errorId": "lMeRiqyICPbU" } }
+  addIdsToItemsThatHaveNone(payload)
 
   const oldData = getObjectsForIdsInPayload(payload, startupDB[collectionId].data)
   const operation = {

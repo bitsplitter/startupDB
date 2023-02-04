@@ -46,7 +46,7 @@ The `PUT` method replaces existing documents or created new documents to the dat
 The `DELETE` method removes documents from the database. The body can contain one object or an array of objects. It one of the **id** values mentioned in the body does not exist, a `400` error will be returned. It is sufficient to pass objects to the body that only contain **id** properties.
 
 ### PATCH
-The `PATCH` method updates documents in the database. The body can contain one object or an array of objects. It one of the **id** values mentioned in the body does not exist, a `400` error will be returned. 
+The `PATCH` method updates documents in the database. The body can contain one object or an array of objects. If the objects have no **id** property, one will be added to each document containing a version 4 UUID string.
 
 #### jsonpatch
 PATCHes can be performed by [jsonpatch](https://jsonpatch.com/). This allows for lightweight, finegrained updates on large objects. To use **jsonpatch** the objects in the body should follow this schema:
