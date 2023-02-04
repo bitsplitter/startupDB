@@ -485,7 +485,7 @@ describe('Behaviour: PUT /leesplank/origineel', function () {
 })
 
 describe('Behaviour: PATCH /leesplank/origineel', function () {
-    it('should return the PATCH body', function (done) {
+    it('should return the PATCH body using the jsonpatch schema', function (done) {
         request(app)
             .patch('/leesplank/origineel')
             .set('Content-type', 'application/json')
@@ -510,7 +510,30 @@ describe('Behaviour: PATCH /leesplank/origineel', function () {
 })
 
 describe('Behaviour: PATCH /leesplank/origineel', function () {
-    it('should return an error ona non-validation PATCH', function (done) {
+    it('should return the PATCH body using any schema', function (done) {
+        request(app)
+            .patch('/leesplank/origineel')
+            .set('Content-type', 'application/json')
+            .send([
+                {
+                    "id": "Jet", 
+                    "description" : "Grote zus.",
+                    "english":"Big sister"
+                }
+            ])
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect(function (res) {
+                assert.strictEqual(res.body[0].id, "Jet")
+                assert.strictEqual(res.body[0].description, "Grote zus.")
+                assert.strictEqual(res.body[0].english, "Big sister")
+            })
+            .end(done)
+    })
+})
+
+describe('Behaviour: PATCH /leesplank/origineel', function () {
+    it('should return an error on a non-validation PATCH', function (done) {
         request(app)
             .patch('/leesplank/origineel')
             .set('Content-type', 'application/json')
@@ -577,20 +600,6 @@ describe('Behaviour: PATCH /leesplank/origineel', function () {
     })
 })
 
-describe('Behaviour: PATCH /leesplank/origineel', function () {
-    it('should return 400 on a malformed PATCH request', function (done) {
-        request(app)
-            .patch('/leesplank/origineel?id=Zus')
-            .set('Content-type', 'application/json')
-            .send([
-                {
-                    "id": "Zus"
-                }
-            ])
-            .expect(400)
-            .end(done)
-    })
-})
 
 describe('Behaviour: GET /leesplank/origineel?returnType=array', function () {
     it('should return an array', function (done) {
@@ -1137,7 +1146,7 @@ describe('Behaviour: UPDATE /leesplank/array', function () {
     })
 })
 describe('Behaviour: PATCH /leesplank/array', function () {
-    it('should return an error', function (done) {
+    it('should return an error on array collections', function (done) {
         request(app)
             .patch('/leesplank/array')
             .set('Content-type', 'application/json')
