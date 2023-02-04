@@ -152,7 +152,8 @@ crud.patch = function (operation: Operation, collectionId: string, db: DBConfig)
     const document = <DBDataObject>tools.deepCopy(startupDB[collectionId].data[item.id])
     let patchedDocument = document
     try {
-      jsonPatch.applyPatch(document, item.patch).newDocument
+      if (item.patch) jsonPatch.applyPatch(document, item.patch).newDocument
+      else patchedDocument = Object.assign(patchedDocument,item)
     } catch (err) {
       return { "statusCode": 400, "message": { "error": "Invalid patch", "errorId": "SYtSsvvMlKiE" } }
     }
