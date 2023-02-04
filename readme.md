@@ -2,7 +2,7 @@
 
 startupDB is a database designed to create REST APIs. It is implemented as an Express middleware function and allows for easy implementation of persistent data endpoints. It features protection from dataloss during hardware failure by persisting individual operations in JSON files and offers high performance by serving all data from memory.
 
-Its CRUD operations map directly to POST, GET, UPDATE/PATCH and DELETE methods.
+Its CRUD operations map directly to POST, GET, UPDATE/PUT/PATCH and DELETE methods.
 
 ## Usage
 
@@ -16,6 +16,49 @@ app.use("/myDB", startupDB.db)
 const server = app.listen(3000)
 ```
 This will create a database under the `myDB` directory. Every endpoint that starts with `/myDB` will translate to a collection with the same name. So `localhost:3000/myDB/user` will implement POST, GET, PUT, DELETE and PATCH endpoints to create, find, update, delete and change user documents. Data will be persisted to disk in `checkpoint/user` and `oplog/user` directories.
+
+## Methods
+StartupDB implements the following methods on all endpoints:
+
+### GET
+The `GET` method retrieved data from the database. Retrieving data from a non existing collection will result in a `200 OK` and an empty response, it will not return a `400` error.
+
+### no parameters
+`GET localhost:3000/myDB/user` will return all documents in the collection.
+
+### id parameter
+`GET localhost:3000/myDB/user?id=peter` will return the document with `id == 'peter'`.
+
+### filter parameter
+`GET localhost:3000/myDB/user?filter=lastname=="Smith"` will return all documents with `lastName == 'Smith'`.
+
+The filter parameter supports sandboxed javascript expressions as implemented by [filtrex](https://www.npmjs.com/package/filtrex).
+
+### POST
+The `POST` method adds new documents to the database. POSTing data to a non existing collection will create the collection. The body can contain one object or an array of objects. If the objects have no **id** property, one will be added to each document containing a version 4 UUID string.
+
+If a document is POSTed with an **id** that already exists in the collection, a `409 conflict` error will be returned. To update an existing document, use the `PUT` or `PATCH` methods.
+
+### PUT
+The `PUT` method replaces existing documents or created new documents to the database. PUTing data to a non existing collection will create the collection. The body can contain one object or an array of objects. If the objects have no **id** property, one will be added to each document containing a version 4 UUID string. If a document exists in the collection with an **id** mentioned in the body of the `PUT`, the document will be replaced with the new document.
+
+### DELETE
+The `DELETE` method removes documents from the database. The body can contain one object or an array of objects. It one of the **id** values mentioned in the body does not exist, a `400` error will be returned. It is sufficient to pass objects to the body that only contain **id** properties.
+
+### PATCH
+The `PATCH` method updates documents in the database. The body can contain one object or an array of objects. It one of the **id** values mentioned in the body does not exist, a `400` error will be returned. 
+
+#### jsonpatch
+PATCHes can be performed by [jsonpatch](https://jsonpatch.com/). This allows for lightweight, finegrained updates on large objects. To use **jsonpatch** the objects in the body should follow this schema:
+```
+{
+    "id":string
+    "patch":array
+}
+```
+#### Object.assign
+If the object has any other schema, the PATCH will be performed by javascript [Object.assign](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/assign)
+
 
 ## API
 
