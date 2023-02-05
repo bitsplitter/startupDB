@@ -384,12 +384,12 @@ const sendOpLog = async function (req: Req, res: Res, next: NextFunction, fromOp
     }
     if (operation.operation == 'patch') {
       const patchedData = data.map(patch => {
-        const document = tools.deepCopy(oldData.find(object => object.id == patch.id))
+        const document = tools.deepCopy(oldData.find(object => object.id == patch.id)||{} ) 
         let patchedDocument = document
         try {
           if (patch.patch) jsonPatch.applyPatch(document, patch.patch).newDocument
           else patchedDocument = Object.assign(patchedDocument,patch)
-
+          
         } catch (err) {
           // return {}
         }

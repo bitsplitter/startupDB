@@ -532,6 +532,28 @@ describe('Behaviour: PATCH /leesplank/origineel', function () {
 })
 
 describe('Behaviour: PATCH /leesplank/origineel', function () {
+    it('should return the  body a non-existing PATCHed document', function (done) {
+        request(app)
+            .patch('/leesplank/origineel')
+            .set('Content-type', 'application/json')
+            .send([
+                {
+                    "id": "Teun", 
+                    "description" : "Man met baard.",
+                    "english":"Man with beard"
+                }
+            ])
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect(function (res) {
+                assert.strictEqual(res.body[0].id, "Teun")
+                assert.strictEqual(res.body[0].description, "Man met baard.")
+                assert.strictEqual(res.body[0].english, "Man with beard")
+            })
+            .end(done)
+    })
+})
+describe('Behaviour: PATCH /leesplank/origineel', function () {
     it('should return an error on a non-validation PATCH', function (done) {
         request(app)
             .patch('/leesplank/origineel')
@@ -692,7 +714,7 @@ describe('Behaviour: GET /leesplank/origineel?fromOpLogId=1', function () {
                 assert.ok(Array.isArray(res.body))
                 assert.strictEqual(res.body[0].operation, 'create')
                 assert.strictEqual(res.body[0].collection, 'origineel')
-                assert.strictEqual(res.body.length, 7)
+                assert.strictEqual(res.body.length, 9)
             })
             .end(done)
     })
@@ -750,7 +772,7 @@ describe("Behaviour GET command", function () {
             .expect(200)
             .expect({
                 "collections": [
-                    { "name": "origineel", "inCache": true, "count": 6, "checkPoint": 0, "lastOplogId": 0 },
+                    { "name": "origineel", "inCache": true, "count": 7, "checkPoint": 0, "lastOplogId": 0 },
                     { "name": "reject", "inCache": true, "count": 0, "checkPoint": 0, "lastOplogId": 0 }
                 ]
             })
