@@ -153,7 +153,6 @@ describe("Behaviour during DBA commands", function () {
             .set("Content-type", "application/json")
             .expect(209)
             .expect(function (res) {
-                console.log(res.body)
                 assert.strictEqual(res.body.collections, undefined)
             })
             .end(done)
@@ -693,6 +692,7 @@ describe('Behaviour: GET /leesplank/origineel?fromOpLogId=1', function () {
                 assert.ok(Array.isArray(res.body))
                 assert.strictEqual(res.body[0].operation, 'create')
                 assert.strictEqual(res.body[0].collection, 'origineel')
+                assert.strictEqual(res.body.length, 7)
             })
             .end(done)
     })
