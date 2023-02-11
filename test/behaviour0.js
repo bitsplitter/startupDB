@@ -397,7 +397,7 @@ describe('Behaviour: GET /leesplank/origineel', function () {
 describe('Behaviour: DELETE one document from /leesplank/origineel', function () {
     it('should return the original document', function (done) {
         request(app)
-            .delete('/leesplank/origineel?id=Aap')
+            .delete('/leesplank/origineel')
             .set('Content-type', 'application/json')
             .send(
                 { "id": "Aap", "description": "Een dier met een staart." }
@@ -414,7 +414,7 @@ describe('Behaviour: DELETE one document from /leesplank/origineel', function ()
 describe('Behaviour: DELETE nonexisting document from /leesplank/origineel', function () {
     it('should return 400', function (done) {
         request(app)
-            .delete('/leesplank/origineel?id=Aap')
+            .delete('/leesplank/origineel')
             .set('Content-type', 'application/json')
             .send(
                 { "id": "Aap", "description": "Een dier met een staart." }
@@ -549,6 +549,18 @@ describe('Behaviour: PATCH /leesplank/origineel', function () {
                 assert.strictEqual(res.body[0].id, "Teun")
                 assert.strictEqual(res.body[0].description, "Man met baard.")
                 assert.strictEqual(res.body[0].english, "Man with beard")
+            })
+            .end(done)
+    })
+})
+describe('Behaviour: DELETE one document by ID from /leesplank/origineel', function () {
+    it('should return the original document', function (done) {
+        request(app)
+            .delete('/leesplank/origineel?id=Teun')
+            .set('Content-type', 'application/json')
+            .expect(200)
+            .expect(function (res) {
+                assert.strictEqual(res.body[0].id, "Teun")
             })
             .end(done)
     })
@@ -714,7 +726,7 @@ describe('Behaviour: GET /leesplank/origineel?fromOpLogId=1', function () {
                 assert.ok(Array.isArray(res.body))
                 assert.strictEqual(res.body[0].operation, 'create')
                 assert.strictEqual(res.body[0].collection, 'origineel')
-                assert.strictEqual(res.body.length, 9)
+                assert.strictEqual(res.body.length, 10)
             })
             .end(done)
     })
@@ -772,7 +784,7 @@ describe("Behaviour GET command", function () {
             .expect(200)
             .expect({
                 "collections": [
-                    { "name": "origineel", "inCache": true, "count": 7, "checkPoint": 0, "lastOplogId": 0 },
+                    { "name": "origineel", "inCache": true, "count": 6, "checkPoint": 0, "lastOplogId": 0 },
                     { "name": "reject", "inCache": true, "count": 0, "checkPoint": 0, "lastOplogId": 0 }
                 ]
             })
@@ -1218,7 +1230,7 @@ describe("Behaviour after POST", function () {
             .send({ "command": "inspect" })
             .expect(200)
             .expect(function (res) {
-                assert.include(res.body.leastRecentlyUsed.collection, '/startupDB/leesplank/origineel')
+                assert.include(res.body.leastRecentlyUsed.collection, '/startupDB/leesplank/reject')
             })
             .end(done)
     })
@@ -1293,30 +1305,55 @@ describe('Behaviour: POST /leesplank/noTimeStamps', function () {
             })
             .end(done)
     })
-    describe("Behaviour: clearCache", function () {
-        it("executing a clearCache command without a collection should return a 400", function (done) {
-            request(app)
-                .post("/leesplank")
-                .set("Content-type", "application/json")
-                .send({ "command": "clearCache" })
-                .expect(400)
-                .end(done)
-        })
+})
+describe('Behaviour: Delete /leesplank/noTimeStamps?filter', function () {
+    it('should documents that satisfy the filter expression', function (done) {
+        request(app)
+            .delete('/leesplank/noTimeStamps?filter=id=="Aap" or id=="Noot"')
+            .set('Content-type', 'application/json')
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect(function (res) {
+                assert.strictEqual(res.body[0].id, "Aap")
+                assert.strictEqual(res.body[1].id, "Noot")
+            })
+            .end(done)
     })
-
-    describe("Behaviour: clearCache", function () {
-        it("executing a clearCache command with a collection should return a 200", function (done) {
-            request(app)
-                .post("/leesplank")
-                .set("Content-type", "application/json")
-                .send({ "command": "clearCache", "collection": "origineel" })
-                .expect(200)
-                .end(done)
-        })
+})
+describe('Behaviour: Get /leesplank/noTimeStamps after delete', function () {
+    it('should return the remaining document', function (done) {
+        request(app)
+            .get('/leesplank/noTimeStamps')
+            .set('Content-type', 'application/json')
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect(function (res) {
+                assert.strictEqual(res.body[0].id, "Mies")
+                assert.strictEqual(res.body.length, 1)
+            })
+            .end(done)
     })
-
-
+})
+describe("Behaviour: clearCache", function () {
+    it("executing a clearCache command without a collection should return a 400", function (done) {
+        request(app)
+            .post("/leesplank")
+            .set("Content-type", "application/json")
+            .send({ "command": "clearCache" })
+            .expect(400)
+            .end(done)
+    })
 })
 
+describe("Behaviour: clearCache", function () {
+    it("executing a clearCache command with a collection should return a 200", function (done) {
+        request(app)
+            .post("/leesplank")
+            .set("Content-type", "application/json")
+            .send({ "command": "clearCache", "collection": "origineel" })
+            .expect(200)
+            .end(done)
+    })
+})
 
 server.close()

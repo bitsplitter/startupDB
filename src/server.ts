@@ -516,12 +516,28 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
 const dbDeleteObjects = async function (db: DBConfig, collection: string, payload: ArrayOfDBDataObjects, query = <any>{}): Promise<DBResponse> {
   const dataFiles = db.dataFiles
   const collectionId = dataFiles + '/' + collection
+  const id = query["id"]
+  const filter = query["filter"]
   await loadCollection(db, collection)
 
   if (startupDB[collectionId]?.options?.storageType == 'array') return { "statusCode": 409, "message": { "error": "Cannot delete from an array collection", "errorId": "MPqDs0QgPc8g" } }
-  if (!allObjectIdsExistInCollection(payload, startupDB[collectionId].data)) return { "statusCode": 400, "message": { "error": "Could not find all id's", "errorId": "lMeRiqyICPbU" } }
-
-  const oldData = getObjectsForIdsInPayload(payload, startupDB[collectionId].data)
+  let oldData = <ArrayOfDBDataObjects>[]
+  if (id) {
+    if (!startupDB[collectionId].data[id]) return { "statusCode": 404, "message": { "error": `Id (${id}) not found`, "errorId": "8qMhWeKDj7Fg" } }
+    oldData = [startupDB[collectionId].data[id]]
+  }
+  else if (filter) {
+    try {
+      myFilter = compileExpression(filter, filtrexOptions)
+    } catch (err) {
+      return { "statusCode": 400, "message": { "error": "<p style=\"font-family:'Courier New'\">" + err.message.replace(/\n/g, '<br>') + "</p>", "errorId": "is9IBEetHorq" } }
+    }
+    const filteredIds = Object.keys(startupDB[collectionId].data).filter(id => myFilter(startupDB[collectionId].data[id]))
+    oldData = filteredIds.map(id => startupDB[collectionId].data[id])
+  } else {
+    if (!allObjectIdsExistInCollection(payload, startupDB[collectionId].data)) return { "statusCode": 400, "message": { "error": "Could not find all id's", "errorId": "lMeRiqyICPbU" } }    
+    oldData = getObjectsForIdsInPayload(payload, startupDB[collectionId].data)
+  }
   const operation = {
     "operation": "delete",
     "collection": collection,
