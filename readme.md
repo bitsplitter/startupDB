@@ -45,6 +45,14 @@ The `PUT` method replaces existing documents or created new documents to the dat
 ### DELETE
 The `DELETE` method removes documents from the database. The body can contain one object or an array of objects. It one of the **id** values mentioned in the body does not exist, a `400` error will be returned. It is sufficient to pass objects to the body that only contain **id** properties.
 
+### id parameter
+`DELETE localhost:3000/myDB/user?id=peter` will delete the document with `id == 'peter'`.
+
+### filter parameter
+`DELETE localhost:3000/myDB/user?filter=lastname=="Smith"` will delete all documents with `lastName == 'Smith'`.
+
+The filter parameter supports sandboxed javascript expressions as implemented by [filtrex](https://www.npmjs.com/package/filtrex).
+
 ### PATCH
 The `PATCH` method updates documents in the database. The body can contain one object or an array of objects. If the objects have no **id** property, one will be added to each document containing a version 4 UUID string.
 
