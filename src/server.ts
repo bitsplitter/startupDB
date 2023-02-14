@@ -197,7 +197,7 @@ const processOplog = async function (collection: string, db: DBConfig, checkPoin
   for (const opLogId of opLogIds) {
     try {
       const operation = <string><unknown>await persist.readFile(dataDirectory, opLogId + '.json', db)
-      if (operation != '') await func(JSON.parse(operation))
+      if (operation != '')  func(JSON.parse(operation))
     } catch (err) {
       // return debugLogger(logError(err))
     }
