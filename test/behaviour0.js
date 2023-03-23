@@ -557,7 +557,6 @@ describe('Behaviour: DELETE one document by ID from /leesplank/origineel', funct
     it('should return the original document', function (done) {
         request(app)
             .delete('/leesplank/origineel?id=Teun')
-            .set('Content-type', 'application/json')
             .expect(200)
             .expect(function (res) {
                 assert.strictEqual(res.body[0].id, "Teun")
@@ -1310,7 +1309,6 @@ describe('Behaviour: Delete /leesplank/noTimeStamps?filter', function () {
     it('should documents that satisfy the filter expression', function (done) {
         request(app)
             .delete('/leesplank/noTimeStamps?filter=id=="Aap" or id=="Noot"')
-            .set('Content-type', 'application/json')
             .expect(200)
             .expect('Content-Type', 'application/json; charset=utf-8')
             .expect(function (res) {

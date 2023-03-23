@@ -759,7 +759,9 @@ const db = function (options: DBOptions) {
 
     if (options.readOnly) return res.sendStatus(403)
     // Be strict about what we consume
-    if (req.headers['content-type'] != 'application/json' && req.headers['content-type'] != 'application/json;charset=UTF-8') return res.sendStatus(400)
+
+    if (req.method == 'DELETE' && Object.keys(req.body).length  > 1 && req.headers['content-type'] != 'application/json' && req.headers['content-type'] != 'application/json;charset=UTF-8') return res.sendStatus(400)
+    if (req.method != 'DELETE' && req.headers['content-type'] != 'application/json' && req.headers['content-type'] != 'application/json;charset=UTF-8') return res.sendStatus(400)
 
     if (req.method == 'POST' && rootRoute) return await executeDBAcommand(req, res, next, req.startupDB.beforePost, req.startupDB.afterPost)
     req.body = tools.ensureArray(req.body)
