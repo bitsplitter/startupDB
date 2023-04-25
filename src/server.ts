@@ -268,10 +268,12 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
   debugLogger('Released ' + collection)
 }
 
-const loadCollection = async function (db: DBConfig, collection: string) {
+const loadCollection = async function (db: DBConfig, collection: string): Promise<boolean> {
   const collectionId = db.dataFiles + '/' + collection
   if (!startupDB[collectionId]?.data || startupDB[collectionId].nextOpLogId == 1) await initStartupDB(db, collection)
+  if (!startupDB[collectionId]?.data) return false
   startupDB[collectionId].lastAccessed = (new Date()).getTime()
+  return true
 }
 
 
@@ -442,9 +444,8 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
   const id = query["id"]
   const filter = query["filter"]
   const returnType = (query['returnType'] || 'array').toLowerCase()
-  await loadCollection(db, collection)
+  if (!await loadCollection(db, collection)) return { "statusCode": 500, "message": { "error": 'Cannot load resource', "errorId": "7d91kl3nw5z0" } }
 
-  startupDB[collectionId].lastAccessed = (new Date()).getTime()
   const headers = getHeaders(collectionId)
   if (id) {
     if (!startupDB[collectionId].data[id]) return { "statusCode": 404, "message": { "error": `Id (${id}) not found`, "errorId": "7qMhSaYDj7Vg" } }
@@ -505,7 +506,7 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
   const collectionId = dataFiles + '/' + collection
   const id = query["id"]
   const filter = query["filter"]
-  await loadCollection(db, collection)
+  if (!await loadCollection(db, collection)) return { "statusCode": 500, "message": { "error": 'Cannot load resource', "errorId": "nw57d91kl3z0" } }
 
   if (startupDB[collectionId]?.options?.storageType == 'array') return { "statusCode": 409, "message": { "error": "Cannot delete from an array collection", "errorId": "MPqDs0QgPc8g" } }
   let oldData = <ArrayOfDBDataObjects>[]
@@ -553,7 +554,7 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
 const dbUpdateObjects = async function (db: DBConfig, collection: string, payload: ArrayOfDBDataObjects, query = <any>{}): Promise<DBResponse> {
   const dataFiles = db.dataFiles
   const collectionId = dataFiles + '/' + collection
-  await loadCollection(db, collection)
+  if (!await loadCollection(db, collection)) return { "statusCode": 500, "message": { "error": 'Cannot load resource', "errorId": "n1kl3z0w57d9" } }
 
   if (startupDB[collectionId]?.options?.storageType == 'array') return { "statusCode": 409, "message": { "error": "Cannot update an array collection", "errorId": "S7lC7Y1ffWp8" } }
   addIdsToItemsThatHaveNone(payload)
@@ -598,7 +599,7 @@ const dbUpdateObjects = async function (db: DBConfig, collection: string, payloa
 const dbPatchObjects = async function (db: DBConfig, collection: string, payload: ArrayOfDBDataObjects, query = <any>{}): Promise<DBResponse> {
   const dataFiles = db.dataFiles
   const collectionId = dataFiles + '/' + collection
-  await loadCollection(db, collection)
+  if (!await loadCollection(db, collection)) return { "statusCode": 500, "message": { "error": 'Cannot load resource', "errorId": "l3z0w57n1kd9" } }
 
   if (startupDB[collectionId]?.options?.storageType == 'array') return { "statusCode": 409, "message": { "error": "Cannot apply patch to an array collection", "errorId": "ZCssBbz1nevT" } }
   addIdsToItemsThatHaveNone(payload)
@@ -643,7 +644,7 @@ const dbPatchObjects = async function (db: DBConfig, collection: string, payload
 const dbCreateObjects = async function (db: DBConfig, collection: string, payload: ArrayOfDBDataObjects, query = <any>{}): Promise<DBResponse> {
   const dataFiles = db.dataFiles
   const collectionId = dataFiles + '/' + collection
-  await loadCollection(db, collection)
+  if (!await loadCollection(db, collection)) return { "statusCode": 500, "message": { "error": 'Cannot load resource', "errorId": "l57n3z0w19dk" } }
 
   if (startupDB[collectionId]?.options?.storageType != 'array') {
     if (anyObjectIdExistsInCollection(payload, startupDB[collectionId].data)) return { "statusCode": 409, "message": { "error": "One or more id's already exist", "errorId": "9s0UuxMbjK4x" } }
