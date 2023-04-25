@@ -11,7 +11,8 @@ const EMPTY_COLLECTION = {
     "data": {},
     "options": {},
     "lastAccessed": 0,
-    "lastModified": 0
+    "lastModified": 0,
+    "length":0
 }
 /*
  * Ensure that an object is an array. If so, return object, else return a one-element array with the object

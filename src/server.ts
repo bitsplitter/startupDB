@@ -125,35 +125,44 @@ function validateDocuments(validator: Function, collection: string, documents: C
   return { "statusCode": 0 }
 }
 const crud = <SomeFunctions>{}
-crud.create = function (operation: Operation, collectionId: string) {
+crud.create = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
   if (startupDB[collectionId]?.options?.storageType == 'array') {
     for (const item of operation.data) {
       const arr = <ArrayOfDBDataObjects>startupDB[collectionId].data
       arr.push(item)
     }
-    usedBytesInMemory += JSON.stringify(operation.data).length
+    const delta = length || JSON.stringify(operation.data).length
+    startupDB[collectionId].length += delta
+
+    usedBytesInMemory += delta
   }
   else
     for (const item of operation.data) {
-      if (!startupDB[collectionId].data[item.id]) usedBytesInMemory += JSON.stringify(item).length
+      if (!startupDB[collectionId].data[item.id]) {
+        const delta = length || JSON.stringify(item).length
+        startupDB[collectionId].length += delta
+        usedBytesInMemory += delta
+      }
 
       startupDB[collectionId].data[item.id] = item
     }
 }
-crud.delete = function (operation: Operation, collectionId: string) {
+crud.delete = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
   for (const item of operation?.oldData || []) delete startupDB[collectionId].data[item.id]
-  usedBytesInMemory -= JSON.stringify(operation.oldData).length
+  const delta = length || JSON.stringify(operation.oldData).length
+  startupDB[collectionId].length -= delta
+  usedBytesInMemory -= delta
 }
-crud.update = function (operation: Operation, collectionId: string) {
-  crud.create(operation, collectionId)
+crud.update = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
+  crud.create(operation, collectionId, db, length)
 }
-crud.patch = function (operation: Operation, collectionId: string, db: DBConfig) {
+crud.patch = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
   for (const item of operation.data) {
     const document = <DBDataObject>tools.deepCopy(startupDB[collectionId].data[item.id] || {})
     let patchedDocument = document
     try {
       if (item.patch) jsonPatch.applyPatch(document, item.patch).newDocument
-      else patchedDocument = Object.assign(patchedDocument,item)
+      else patchedDocument = Object.assign(patchedDocument, item)
     } catch (err) {
       return { "statusCode": 400, "message": { "error": "Invalid patch", "errorId": "SYtSsvvMlKiE" } }
     }
@@ -164,14 +173,18 @@ crud.patch = function (operation: Operation, collectionId: string, db: DBConfig)
       if (errors.statusCode > 0) return errors
     }
     startupDB[collectionId].data[item.id] = patchedDocument
+    const delta = length || JSON.stringify(item).length
+    startupDB[collectionId].length += delta
+    usedBytesInMemory += delta
   }
 }
-const applyCRUDoperation = function (operation: Operation, db: DBConfig) {
+const applyCRUDoperation = function (operation: Operation, db: DBConfig, length: number) {
   const crudOperation = operation.operation
   const collection = operation.collection
   const collectionId = db.dataFiles + '/' + collection
   const crudFunction = crud[crudOperation]
-  const response = crudFunction(operation, collectionId, db)
+
+  const response = crudFunction(operation, collectionId, db, length)
   startupDB[collectionId].lastModified = (new Date()).getTime()
   startupDB[collectionId].lastAccessed = startupDB[collectionId].lastModified
   return response
@@ -190,14 +203,14 @@ function getOplogIDsFromFileNames(files: Array<string>, checkPoint: number): Arr
 //
 // Helper function to loop over all opLog files after a certain checkPoint and call a function on it's content
 //
-const processOplog = async function (collection: string, db: DBConfig, checkPoint: number, func: Function) {
+const processOplog = async function (collection: string, db: DBConfig, checkPoint: number, func: (operation: Operation, length: number) => void) {
   const dataDirectory = './oplog/' + collection
   const files = await persist.readdir(dataDirectory, db)
   const opLogIds = getOplogIDsFromFileNames(files, checkPoint).sort(function (a: number, b: number) { return a - b }) // opLog must be processed in order. 
   for (const opLogId of opLogIds) {
     try {
       const operation = <string><unknown>await persist.readFile(dataDirectory, opLogId + '.json', db)
-      if (operation != '')  func(JSON.parse(operation))
+      if (operation != '') func(JSON.parse(operation), operation.length)
     } catch (err) {
       // return debugLogger(logError(err))
     }
@@ -229,12 +242,12 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     debugLogger('Locked ' + collection)
     try {
       const raw = <string><unknown>await persist.readFile(dataDirectory, 'latest.json', db)
-      const latest = raw.toString()
       // This contains a previously saved checkpoint
-      startupDB[collectionId] = JSON.parse(latest)
+      startupDB[collectionId] = JSON.parse(raw)
       startupDB[collectionId].lock = mutex
       startupDB[collectionId].lastAccessed = (new Date()).getTime()
-      usedBytesInMemory += JSON.stringify(startupDB[collectionId].data).length
+      startupDB[collectionId].length = raw.length
+      usedBytesInMemory += raw.length
       checkPoint = startupDB[collectionId].checkPoint
     } catch (err) {
       if (err.code == 'ENOENT') {
@@ -244,9 +257,9 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
         startupDB[collectionId].lastAccessed = (new Date()).getTime()
       }
     }
-    await processOplog(collection, db, checkPoint, function (operation: Operation) {
+    await processOplog(collection, db, checkPoint, function (operation: Operation, length: number) {
       startupDB[collectionId].nextOpLogId = operation.opLogId + 1
-      applyCRUDoperation(operation, db)
+      applyCRUDoperation(operation, db, length)
     })
   } else {
     debugLogger('Locked... no need to retrieve', collection)
@@ -283,50 +296,24 @@ const writeOperationToOpLog = async function (operation: Operation, db: DBConfig
   release()
 }
 
-const calculateMemoryFootprint = function (collectionNames: string[]) {
-  return collectionNames.reduce((acc, collection) => {
-    if (!startupDB[collection] || !startupDB[collection].data) return 0
-    if (startupDB[collection]?.options?.storageType == 'array') {
-      const array = <ArrayOfDBDataObjects>startupDB[collection].data
-      return array.reduce((acc, item) => acc + JSON.stringify(item).length, 0)
-    }
-    else return acc + JSON.stringify(startupDB[collection].data).length
-  }, 0)
-}
-
 const startupDBGC = function (options: any): number {
   let deletedCollections = 0
-  const threshold = options?.testing ? 1024 : MAX_BYTES_IN_MEMORY
+  const threshold = options?.testing ? 10240 : MAX_BYTES_IN_MEMORY
   if (usedBytesInMemory < threshold) return deletedCollections
   // Remove least recently used collections
   const orderedCollections = Object.keys(startupDB)
     .map(collection => ({ "collection": collection, "lastAccessed": startupDB[collection].lastAccessed }))
     .sort((a, b) => a.lastAccessed - b.lastAccessed)
 
-  // Recalculate usedBytesInMemory when low on memory with few resources in cache.
-  // This is an indication that usedBytesInMemory is too far off with reality.
-  // This causes too many cache evictions.
-  // Recalculation is relatively cheap here because of the small number of resources to recalculate
-
-  if (usedBytesInMemory > threshold * (100 - GC_SWEEP_PERCENTAGE) / 100 && orderedCollections.length < 100)
-    usedBytesInMemory = calculateMemoryFootprint(orderedCollections.map(o => o.collection))
-
   let indexOfCollectionToDelete = 0
   do {
     const collectionToDelete = orderedCollections[indexOfCollectionToDelete++]?.collection
     if (collectionToDelete && startupDB[collectionToDelete]?.data) {
-      if (startupDB[collectionToDelete]?.options?.storageType == 'array') {
-        const array = <ArrayOfDBDataObjects>startupDB[collectionToDelete].data
-        usedBytesInMemory -= array.reduce((acc, item) => acc + JSON.stringify(item).length, 0)
-      }
-      else usedBytesInMemory -= JSON.stringify(startupDB[collectionToDelete].data).length
+      usedBytesInMemory -= startupDB[collectionToDelete].length
       delete startupDB[collectionToDelete]
       deletedCollections++
     }
   } while (usedBytesInMemory >= threshold * (100 - GC_SWEEP_PERCENTAGE) / 100 && indexOfCollectionToDelete < orderedCollections.length)
-  // If the cleanupsweep removed so much as to bring usedBytesInMemory under what we aimed to remove,
-  // our memory heuristic might be off track, recalculate
-  if (usedBytesInMemory < threshold * (GC_SWEEP_PERCENTAGE) / 100) usedBytesInMemory = calculateMemoryFootprint(orderedCollections.map(o => o.collection))
   return deletedCollections
 }
 
@@ -373,7 +360,7 @@ const sendOpLog = async function (req: Req, res: Res, next: NextFunction, fromOp
   // When a client has old data and requests an opLogId that has been deleted (due to flush), we respond with a 404 signalling the client to reload
   let tooOld = true
   let prevId = -1 // Used to detect a gap in the oplog (because of a pending operation). Only send the contigues opLog
-  await processOplog(collection, req.startupDB, fromOpLogId, function (operation) {
+  await processOplog(collection, req.startupDB, fromOpLogId, function (operation: Operation) {
     if (operation.opLogId == fromOpLogId + 1) tooOld = false
     if (prevId != -1 && operation.opLogId > prevId + 1) return // a gap, don't send the rest
     prevId = operation.opLogId
@@ -382,14 +369,14 @@ const sendOpLog = async function (req: Req, res: Res, next: NextFunction, fromOp
       const filteredData = filterObjectsFromQuery(oldData, req.query)
       if (filteredData.length > 0) opLog.push({ ...lightOperation, oldData: filteredData })
     }
-    if (operation.operation == 'patch') {
+    if (operation.operation == 'patch' && oldData) {
       const patchedData = data.map(patch => {
-        const document = tools.deepCopy(oldData.find(object => object.id == patch.id)||{} ) 
+        const document = tools.deepCopy(oldData.find(object => object.id == patch.id) || {})
         let patchedDocument = document
         try {
           if (patch.patch) jsonPatch.applyPatch(document, patch.patch).newDocument
-          else patchedDocument = Object.assign(patchedDocument,patch)
-          
+          else patchedDocument = Object.assign(patchedDocument, patch)
+
         } catch (err) {
           // return {}
         }
@@ -535,7 +522,7 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
     const filteredIds = Object.keys(startupDB[collectionId].data).filter(id => myFilter(startupDB[collectionId].data[id]))
     oldData = filteredIds.map(id => startupDB[collectionId].data[id])
   } else {
-    if (!allObjectIdsExistInCollection(payload, startupDB[collectionId].data)) return { "statusCode": 400, "message": { "error": "Could not find all id's", "errorId": "lMeRiqyICPbU" } }    
+    if (!allObjectIdsExistInCollection(payload, startupDB[collectionId].data)) return { "statusCode": 400, "message": { "error": "Could not find all id's", "errorId": "lMeRiqyICPbU" } }
     oldData = getObjectsForIdsInPayload(payload, startupDB[collectionId].data)
   }
   const operation = {
@@ -550,7 +537,7 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
     }
   }
   await writeOperationToOpLog(operation, db)
-  applyCRUDoperation(operation, db)
+  applyCRUDoperation(operation, db, db.contentLength)
   return { "statusCode": 200, "data": query?.returnType != 'tally' ? oldData : { "tally": oldData.length } }
 }
 
@@ -594,7 +581,7 @@ const dbUpdateObjects = async function (db: DBConfig, collection: string, payloa
     }
   }
   await writeOperationToOpLog(operation, db)
-  applyCRUDoperation(operation, db)
+  applyCRUDoperation(operation, db, db.contentLength)
   return { "statusCode": 200, "data": query?.returnType != 'tally' ? payload : { "tally": payload.length } }
 }
 
@@ -631,7 +618,7 @@ const dbPatchObjects = async function (db: DBConfig, collection: string, payload
   // We're a bit lazy here. We should have checked wheter all the patches could be applied, instead, we let applyCRUDoperation figure it out.
   // If an error occurs, we don't write this update to the oplog. Worstcase scenario, we'll loose this patch in case of a DB crash
   try {
-    const dbResponse = applyCRUDoperation(operation, db)
+    const dbResponse = applyCRUDoperation(operation, db, db.contentLength)
     if (dbResponse?.statusCode) return dbResponse
   } catch (e) {
     return { "statusCode": 400, "message": { "error": "Could not apply all patches", "errorId": "PUpDKuw4NqyU" } }
@@ -681,7 +668,7 @@ const dbCreateObjects = async function (db: DBConfig, collection: string, payloa
     }
   }
   await writeOperationToOpLog(operation, db)
-  applyCRUDoperation(operation, db)
+  applyCRUDoperation(operation, db, db.contentLength)
   return { "statusCode": 200, "data": query?.returnType != 'tally' ? payload : { "tally": payload.length } }
 }
 
@@ -722,6 +709,7 @@ const db = function (options: DBOptions) {
       options: {},
       dataFiles: "",
       collection: "",
+      contentLength: 0
     }
     if (!req.startupDB.beforeGet) req.startupDB.beforeGet = []
     if (!req.startupDB.beforePost) req.startupDB.beforePost = []
@@ -749,7 +737,7 @@ const db = function (options: DBOptions) {
 
     const collection = req.startupDB.collection
     const query = req.query
-
+    req.startupDB.contentLength = parseInt(req.headers['content-length'] || '0')
     if (req.method == 'GET' && rootRoute) {
       req.body = { "command": "list" }
       return await executeDBAcommand(req, res, next, req.startupDB.beforeGet, req.startupDB.afterGet)
@@ -760,7 +748,7 @@ const db = function (options: DBOptions) {
     if (options.readOnly) return res.sendStatus(403)
     // Be strict about what we consume
 
-    if (req.method == 'DELETE' && Object.keys(req.body).length  > 1 && req.headers['content-type'] != 'application/json' && req.headers['content-type'] != 'application/json;charset=UTF-8') return res.sendStatus(400)
+    if (req.method == 'DELETE' && Object.keys(req.body).length > 1 && req.headers['content-type'] != 'application/json' && req.headers['content-type'] != 'application/json;charset=UTF-8') return res.sendStatus(400)
     if (req.method != 'DELETE' && req.headers['content-type'] != 'application/json' && req.headers['content-type'] != 'application/json;charset=UTF-8') return res.sendStatus(400)
 
     if (req.method == 'POST' && rootRoute) return await executeDBAcommand(req, res, next, req.startupDB.beforePost, req.startupDB.afterPost)
@@ -784,6 +772,7 @@ const registerHook = function (hooks: Array<string>, fn: Function) {
       options: {},
       dataFiles: "",
       collection: "",
+      contentLength: 0
     }
     for (const hook of hooks) {
       if (!req.startupDB[hook]) req.startupDB[hook] = []

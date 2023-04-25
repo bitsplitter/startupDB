@@ -11,7 +11,6 @@ export type DBResponse = {
     data?: object,
     message?: any,
     headers?: object,
-    body?: object
 }
 
 export type DBOptions = {
@@ -42,7 +41,8 @@ export type DBConfig = {
     updateObjects?: Function,
     deleteObjects?: Function,
     patchObjects?: Function,
-    executeDBAcommand?: Function
+    executeDBAcommand?: Function,
+    contentLength: number
 }
 export interface DBDataObject {
     id: string,
@@ -59,7 +59,8 @@ export interface Collection {
     lock: MutexInterface,
     checkPoint: number,
     nextOpLogId: number,
-    savedAt: number
+    savedAt: number,
+    length: number
 }
 
 export interface Operation {

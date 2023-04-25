@@ -129,7 +129,7 @@ describe("Behaviour after POSTn", function () {
             .send({ "command": "inspect" })
             .expect(200)
             .expect(function (res) {
-                assert.strictEqual(res.body.usedBytesInMemory, 216)
+                assert.strictEqual(res.body.usedBytesInMemory, 426)
             })
             .end(done)
     })
@@ -1222,7 +1222,7 @@ describe('Behaviour: GET /leesplank/notthere', function () {
 })
 
 describe("Behaviour after POST", function () {
-    it("leastRecentlyUsed collection should be /Users/jeroen/startupDB/leesplank/origineel)", function (done) {
+    it("leastRecentlyUsed collection should be /Users/jeroen/startupDB/leesplank/reject)", function (done) {
         request(app)
             .post("/leesplank")
             .set("Content-type", "application/json")
@@ -1230,6 +1230,7 @@ describe("Behaviour after POST", function () {
             .expect(200)
             .expect(function (res) {
                 assert.include(res.body.leastRecentlyUsed.collection, '/startupDB/leesplank/reject')
+                assert.equal(res.body.nrCollectionsInCache, 7)
             })
             .end(done)
     })
@@ -1350,6 +1351,45 @@ describe("Behaviour: clearCache", function () {
             .set("Content-type", "application/json")
             .send({ "command": "clearCache", "collection": "origineel" })
             .expect(200)
+            .end(done)
+    })
+})
+
+
+describe('Behaviour: POST /leesplank/big0', function () {
+    it('store big datain a new collection', function (done) {
+        request(app)
+            .post('/leesplank/big0')
+            .set('Content-type', 'application/json')
+            .send([
+                { "id": "big00", "description": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" },
+                { "id": "big01", "description": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" },
+                { "id": "big02", "description": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" },
+                { "id": "big03", "description": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" },
+                { "id": "big04", "description": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" },
+                { "id": "big05", "description": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" },
+                { "id": "big06", "description": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" },
+                { "id": "big07", "description": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" },
+                { "id": "big08", "description": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" },
+                { "id": "big09", "description": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" },
+            ])
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .end(done)
+    })
+})
+
+describe("Behaviour: expect GC after adding a lot of data", function () {
+    it("should remove some collections from cache", function (done) {
+        request(app)
+            .post("/leesplank")
+            .set("Content-type", "application/json")
+            .send({ "command": "inspect" })
+            .expect(200)
+            .expect(function (res) {
+                assert.strictEqual(res.body.usedBytesInMemory, 2097)
+                assert.strictEqual(res.body.nrCollectionsInCache, 1)
+            })
             .end(done)
     })
 })
