@@ -136,22 +136,28 @@ crud.create = function (operation: Operation, collectionId: string, db: DBConfig
 
     usedBytesInMemory += delta
   }
-  else
+  else {
     for (const item of operation.data) {
       if (!startupDB[collectionId].data[item.id]) {
-        const delta = length || JSON.stringify(item).length
+        // If length is not given, calculate dynamically
+        const delta = length == 0 ? JSON.stringify(item).length : 0
         startupDB[collectionId].length += delta
         usedBytesInMemory += delta
       }
 
       startupDB[collectionId].data[item.id] = item
     }
+    if (length != 0) {
+      // If length is given, it describes the whole payload so ony add it once
+      const delta = length
+      startupDB[collectionId].length += delta
+      usedBytesInMemory += delta
+    }
+  }
 }
 crud.delete = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
   for (const item of operation?.oldData || []) delete startupDB[collectionId].data[item.id]
-  const delta = length || JSON.stringify(operation.oldData).length
-  startupDB[collectionId].length -= delta
-  usedBytesInMemory -= delta
+  // We do not update memory consumption, deletes are rare and not worth the uncertainty of inacurate lengths
 }
 crud.update = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
   crud.create(operation, collectionId, db, length)
@@ -173,7 +179,14 @@ crud.patch = function (operation: Operation, collectionId: string, db: DBConfig,
       if (errors.statusCode > 0) return errors
     }
     startupDB[collectionId].data[item.id] = patchedDocument
-    const delta = length || JSON.stringify(item).length
+    // If length is not given, calculate dynamically
+    const delta = length == 0 ? JSON.stringify(item).length : 0
+    startupDB[collectionId].length += delta
+    usedBytesInMemory += delta
+  }
+  if (length != 0) {
+    // If length is given, it describes the whole payload so ony add it once
+    const delta = length
     startupDB[collectionId].length += delta
     usedBytesInMemory += delta
   }
@@ -300,7 +313,7 @@ const writeOperationToOpLog = async function (operation: Operation, db: DBConfig
 
 const startupDBGC = function (options: any): number {
   let deletedCollections = 0
-  const threshold = options?.testing ? 10240 : MAX_BYTES_IN_MEMORY
+  const threshold = options?.testing ? 2048 : MAX_BYTES_IN_MEMORY
   if (usedBytesInMemory < threshold) return deletedCollections
   // Remove least recently used collections
   const orderedCollections = Object.keys(startupDB)

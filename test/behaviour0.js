@@ -129,7 +129,7 @@ describe("Behaviour after POSTn", function () {
             .send({ "command": "inspect" })
             .expect(200)
             .expect(function (res) {
-                assert.strictEqual(res.body.usedBytesInMemory, 426)
+                assert.strictEqual(res.body.usedBytesInMemory, 142)
             })
             .end(done)
     })
@@ -1222,15 +1222,15 @@ describe('Behaviour: GET /leesplank/notthere', function () {
 })
 
 describe("Behaviour after POST", function () {
-    it("leastRecentlyUsed collection should be /Users/jeroen/startupDB/leesplank/reject)", function (done) {
+    it("leastRecentlyUsed collection should be /Users/jeroen/startupDB/leesplank/silent)", function (done) {
         request(app)
             .post("/leesplank")
             .set("Content-type", "application/json")
             .send({ "command": "inspect" })
             .expect(200)
             .expect(function (res) {
-                assert.include(res.body.leastRecentlyUsed.collection, '/startupDB/leesplank/reject')
-                assert.equal(res.body.nrCollectionsInCache, 7)
+                assert.include(res.body.leastRecentlyUsed.collection, '/startupDB/leesplank/silent')
+                assert.equal(res.body.nrCollectionsInCache, 5)
             })
             .end(done)
     })
@@ -1387,7 +1387,7 @@ describe("Behaviour: expect GC after adding a lot of data", function () {
             .send({ "command": "inspect" })
             .expect(200)
             .expect(function (res) {
-                assert.strictEqual(res.body.usedBytesInMemory, 2097)
+                assert.strictEqual(res.body.usedBytesInMemory, 486)
                 assert.strictEqual(res.body.nrCollectionsInCache, 1)
             })
             .end(done)
