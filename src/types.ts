@@ -19,7 +19,8 @@ export type DBOptions = {
     secondaryDataDirs?: Array<string>,
     opLogArchive?: string,
     addTimeStamps?: Function,
-    validator?: Function
+    validator?: Function,
+    sentry?: any
 }
 
 export type DBConfig = {

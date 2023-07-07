@@ -87,7 +87,7 @@ const GC_SWEEP_PERCENTAGE = 20 // Percentage of memory to sweep to prevent the G
 
 const propFunction = function (propertyName: string, get: (arg0: string) => any, obj: any) {
   const positionOfDot = propertyName.indexOf(".")
-  if (positionOfDot < 0) return get(propertyName)
+  if (positionOfDot < 0 && propertyName in obj) return get(propertyName)
   return propertyName.split('.').reduce((o, k) => (o || {})[k], obj)
 }
 let myFilter = function (s: string) { return false }
@@ -701,6 +701,7 @@ const processMethod = async function (req: Req, res: Res, next: NextFunction, co
     if (query['fromOpLogId']) return await sendOpLog(req, res, next, parseInt(query['fromOpLogId']))
   } catch (e) {
     console.log('STARTUPDB Error', e)
+    if (typeof (req.startupDB.options.sentry?.captureException) == 'function') req.startupDB.options.sentry.captureException(e)
     return res.status(500).send('')
   }
   return res.send(response.data)
