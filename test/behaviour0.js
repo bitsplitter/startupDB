@@ -1328,4 +1328,25 @@ describe('Behaviour: expect GC after adding a lot of data', function () {
     })
 })
 
+describe('Behaviour: get /', function () {
+    it('should return list of all collections', function (done) {
+        request(app)
+            .get('/leesplank')
+            .set('Content-type', 'application/json')
+            .expect(200)
+            .expect(function (res) {
+                assert.strictEqual(res.body.collections[0].name, 'origineel')
+                assert.strictEqual(res.body.collections[1].name, 'big0')
+                assert.strictEqual(res.body.collections[2].name, 'complex')
+                assert.strictEqual(res.body.collections[3].name, 'genids')
+                assert.strictEqual(res.body.collections[4].name, 'noTimeStamps')
+                assert.strictEqual(res.body.collections[5].name, 'silent')
+                assert.strictEqual(res.body.collections[6].name, 'array')
+                assert.strictEqual(res.body.collections[7].name, 'array2')
+                assert.strictEqual(res.body.collections.length, 8)
+            })
+            .end(done)
+    })
+})
+
 server.close()
