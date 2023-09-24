@@ -258,7 +258,8 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     const release = await mutex.acquire()
     // We got the lock so we know we're the only one running this code now.
     // First check if the data we're after isn't already there (then someone else had the lock first and finished the work and we don't do anything)
-    if (startupDB[collectionId].nextOpLogId == 1) {
+    // Under high load, startupDB[collectionId] sometimes does not exist. startupDBGC might have kicked it out so we check here for !startupDB[collectionId]
+    if (!startupDB[collectionId] || startupDB[collectionId].nextOpLogId == 1) {
         debugLogger('Locked ' + collection)
         try {
             const raw = <string>(<unknown>await persist.readFile(dataDirectory, 'latest.json', db))
