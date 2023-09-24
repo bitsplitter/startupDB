@@ -4,7 +4,7 @@ import fs from 'fs-extra'
 import path from 'path'
 
 const writeFileSync = function (dirName: string, fileName: string, payload: string, db: DBConfig) {
-    db.options.secondaryDataDirs?.forEach(rootDir => {
+    db.options.secondaryDataDirs?.forEach((rootDir) => {
         fs.ensureDirSync(path.join(rootDir, dirName))
         fs.writeFileSync(path.join(rootDir, dirName, fileName), payload, 'utf8')
     })
@@ -12,7 +12,7 @@ const writeFileSync = function (dirName: string, fileName: string, payload: stri
     fs.writeFileSync(path.join(db.dataFiles, dirName, fileName), payload, 'utf8')
 }
 const writeFile = async function (dirName: string, fileName: string, payload: string, db: DBConfig) {
-    db.options.secondaryDataDirs?.forEach(rootDir => {
+    db.options.secondaryDataDirs?.forEach((rootDir) => {
         fs.ensureDirSync(path.join(rootDir, dirName))
         fs.writeFile(path.join(rootDir, dirName, fileName), payload, 'utf8')
     })
@@ -31,30 +31,31 @@ const readdir = async function (dirName: string, db: DBConfig) {
 }
 
 function readdirRecursive(dirName: string) {
-    try {
-        const entries = fs.readdirSync(dirName, { withFileTypes: true })
-        const dirs = entries
-            .filter(dir => dir.isDirectory())
-            .map(dir => path.join(dirName, dir.name))
+    const list: string[] = []
+    function readdirRecursive2(dirName: string) {
+        try {
+            const entries = fs.readdirSync(dirName, { withFileTypes: true })
+            const dirs = entries.filter((dir) => dir.isDirectory()).map((dir) => path.join(dirName, dir.name))
 
-        if (dirs.length == 0) return [dirName]
-        const subDirs = [] as any
-        for (const dir of dirs) subDirs.push(...readdirRecursive(dir))
-
-        return subDirs
-    } catch {
-        return []
+            if (dirs.length == 0) list.push(dirName)
+            const subDirs = [] as any
+            for (const dir of dirs) readdirRecursive2(dir)
+        } catch {
+            return
+        }
     }
+    readdirRecursive2(dirName)
+    return list
 }
 const rename = function (newFile: string, oldFile: string, db: DBConfig) {
-    db.options.secondaryDataDirs?.forEach(rootDir => {
+    db.options.secondaryDataDirs?.forEach((rootDir) => {
         fs.renameSync(path.join(rootDir, newFile), path.join(rootDir, oldFile))
     })
     return fs.renameSync(path.join(db.dataFiles, newFile), path.join(db.dataFiles, oldFile))
 }
 const archive = function (fileName: string, db: DBConfig) {
     const archiveDir = db.options.opLogArchive!
-    db.options.secondaryDataDirs?.forEach(rootDir => {
+    db.options.secondaryDataDirs?.forEach((rootDir) => {
         try {
             fs.unlinkSync(path.join(rootDir, fileName))
         } catch (e) {
@@ -69,11 +70,10 @@ const archive = function (fileName: string, db: DBConfig) {
     return
 }
 const rmdirSync = function (dirName: string, db: DBConfig) {
-    db.options.secondaryDataDirs?.forEach(rootDir => {
+    db.options.secondaryDataDirs?.forEach((rootDir) => {
         try {
             fs.rmSync(path.join(rootDir, dirName), { recursive: true })
-        } catch (err) {
-        }
+        } catch (err) {}
     })
     try {
         fs.rmSync(path.join(db.dataFiles, dirName), { recursive: true })
@@ -96,7 +96,7 @@ const fileTimestampSync = function (fileName: string, db) {
  * find the last file in an opLog folder.
  */
 const mostRecentFile = async function (dirName: string, db: DBConfig) {
-    const files = (await readdir(dirName, db)).map(file => parseInt(file)).sort((a, b) => a - b)
+    const files = (await readdir(dirName, db)).map((file) => parseInt(file)).sort((a, b) => a - b)
     const nrFiles = files.length
     return files[nrFiles - 1]
 }
@@ -111,5 +111,5 @@ export default {
     rename,
     rmdirSync,
     writeFile,
-    writeFileSync
+    writeFileSync,
 }
