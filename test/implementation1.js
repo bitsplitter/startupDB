@@ -41,10 +41,11 @@ describe('Implementation GET command', function () {
 })
 
 extCnt = 0
+const NR_KEYS = 100000
 bigdata = function () {
     test = extCnt
     data = []
-    for (i = 0; i < 100000; i++) {
+    for (i = 0; i < NR_KEYS; i++) {
         data.push({
             id: '' + (test * 10000 + i),
             pl: '1234567890',
@@ -61,12 +62,12 @@ for (test = 0; test < 10; test++) {
         this.timeout(50000)
         it('should return the POSTed body', function (done) {
             request(app)
-                .post('/leesplank/test' + testCounter++)
+                .post('/leesplank/testCounter' + testCounter++ + '?returnType=tally')
                 .set('Content-type', 'application/json')
                 .send(blob)
                 .expect(200)
                 .expect(function (res) {
-                    assert.strictEqual(res.body.length, 100000)
+                    assert.strictEqual(res.body.tally, NR_KEYS)
                 })
                 .end(done)
         })

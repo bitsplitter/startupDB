@@ -396,9 +396,8 @@ describe('Behaviour: GET /leesplank/origineel', function () {
 describe('Behaviour: DELETE one document from /leesplank/origineel', function () {
     it('should return the original document', function (done) {
         request(app)
-            .delete('/leesplank/origineel')
+            .delete('/leesplank/origineel?id=Aap')
             .set('Content-type', 'application/json')
-            .send({ id: 'Aap', description: 'Een dier met een staart.' })
             .expect(200)
             .expect(function (res) {
                 assert.strictEqual(res.body[0].id, 'Aap')
@@ -409,28 +408,22 @@ describe('Behaviour: DELETE one document from /leesplank/origineel', function ()
 })
 
 describe('Behaviour: DELETE nonexisting document from /leesplank/origineel', function () {
-    it('should return 400', function (done) {
-        request(app).delete('/leesplank/origineel').set('Content-type', 'application/json').send({ id: 'Aap', description: 'Een dier met een staart.' }).expect(400).end(done)
+    it('should return 404', function (done) {
+        request(app).delete('/leesplank/origineel?id=Aap').set('Content-type', 'application/json').expect(404).end(done)
     })
 })
 
-describe('Behaviour: DELETE multiple documents where one does not exist from /leesplank/origineel', function () {
+describe('Behaviour: DELETE without parameters from /leesplank/origineel', function () {
     it('should return 400', function (done) {
-        request(app)
-            .delete('/leesplank/origineel')
-            .set('Content-type', 'application/json')
-            .send([{ id: 'Wim' }, { id: 'Aap' }])
-            .expect(400)
-            .end(done)
+        request(app).delete('/leesplank/origineel').set('Content-type', 'application/json').expect(400).end(done)
     })
 })
 
 describe('Behaviour: DELETE multiple documents from /leesplank/origineel', function () {
     it('should return the original documents', function (done) {
         request(app)
-            .delete('/leesplank/origineel')
+            .delete('/leesplank/origineel?filter=id in ("Wim","Zus")')
             .set('Content-type', 'application/json')
-            .send([{ id: 'Wim' }, { id: 'Zus' }])
             .expect(200)
             .expect(function (res) {
                 assert.strictEqual(res.body[0].id, 'Wim')
@@ -858,9 +851,8 @@ describe('Behaviour: PUT /leesplank/silent?returnType=tally', function () {
 describe('Behaviour: DELETE /leesplank/silent?returnType=tally', function () {
     it('should return number of deleted objects', function (done) {
         request(app)
-            .delete('/leesplank/silent?returnType=tally')
+            .delete('/leesplank/silent?returnType=tally&filter=id in ("Wim","Zus")')
             .set('Content-type', 'application/json')
-            .send([{ id: 'Wim' }, { id: 'Zus' }])
             .expect(200)
             .expect('Content-Type', 'application/json; charset=utf-8')
             .expect(function (res) {
@@ -1110,13 +1102,7 @@ describe('Behaviour: GET /leesplank/array', function () {
 })
 describe('Behaviour: DELETE /leesplank/array', function () {
     it('should return a 409', function (done) {
-        request(app)
-            .delete('/leesplank/array')
-            .set('Content-type', 'application/json')
-            .send({ id: 'Aap', description: 'Een dier met een staart.' })
-            .expect(409)
-            .expect('Content-Type', 'application/json; charset=utf-8')
-            .end(done)
+        request(app).delete('/leesplank/array?id=409').set('Content-type', 'application/json').expect(409).expect('Content-Type', 'application/json; charset=utf-8').end(done)
     })
 })
 describe('Behaviour: UPDATE /leesplank/array', function () {

@@ -511,13 +511,13 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
 
 /**
  *
- * Delete an object or an array of objects from a given collection.
+ * Delete one or more objects from a given collection.
  *
  * Create an entry in the opLog
  * Apply the delete CRUD operation
  *
  * Return 200: the 'old' object(s)
- * Return 400: if one of the object does not exists or an id is missing from the request
+ * Return 400: if no id or fiter is specified
  */
 const dbDeleteObjects = async function (db: DBConfig, collection: string, payload: ArrayOfDBDataObjects, query = <any>{}): Promise<DBResponse> {
     const dataFiles = db.dataFiles
@@ -540,9 +540,7 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
         const filteredIds = Object.keys(startupDB[collectionId].data).filter((id) => myFilter(startupDB[collectionId].data[id]))
         oldData = filteredIds.map((id) => startupDB[collectionId].data[id])
     } else {
-        if (!allObjectIdsExistInCollection(payload, startupDB[collectionId].data))
-            return { statusCode: 400, message: { error: "Could not find all id's", errorId: 'lMeRiqyICPbU' } }
-        oldData = getObjectsForIdsInPayload(payload, startupDB[collectionId].data)
+        return { statusCode: 400, message: { error: 'No id or filter specified', errorId: 'lMeRiqyICPbU' } }
     }
     const operation = {
         operation: 'delete',
