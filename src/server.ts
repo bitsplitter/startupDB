@@ -509,6 +509,20 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
     }
 }
 
+const getRawCheckpoint = async function (req: Req, res: Res, next: NextFunction, collection: string, fileName: string) {
+    const db = req.startupDB
+    const dataDirectory = './checkpoint/' + collection
+    const raw = <string>(<unknown>await persist.readFile(dataDirectory, fileName, db))
+    if (fileName.includes('.gz')) res.set('Content-Encoding', 'gzip')
+    res.set('Content-Type', 'application/json')
+    res.send(raw)
+    return
+}
+const rawCheckpointExists = async function (req: Req, res: Res, next: NextFunction, collection: string, fileName: string) {
+    const db = req.startupDB
+    const x = persist.existsSync('./checkpoint/' + collection + '/' + fileName, db)
+    return x
+}
 /**
  *
  * Delete one or more objects from a given collection.
@@ -785,6 +799,10 @@ const db = function (options: DBOptions) {
             req.body = { command: 'list' }
             return await executeDBAcommand(req, res, next, req.startupDB.beforeGet, req.startupDB.afterGet)
         }
+        if (options.serveRawCheckpoint && req.method == 'GET' && req.query.returnType == 'checkPoint' && (await rawCheckpointExists(req, res, next, collection, 'latest.json.gz')))
+            return await getRawCheckpoint(req, res, next, collection, 'latest.json.gz')
+        if (options.serveRawCheckpoint && req.method == 'GET' && req.query.returnType == 'checkPoint' && (await rawCheckpointExists(req, res, next, collection, 'latest.json')))
+            return await getRawCheckpoint(req, res, next, collection, 'latest.json')
         if (req.method == 'GET') return await processMethod(req, res, next, collection, query, [], req.startupDB.beforeGet, dbGetObjects, req.startupDB.afterGet)
         if (req.method == 'HEAD') return await processMethod(req, res, next, collection, query, [], [], dbAnalyzeObjects, [])
 
