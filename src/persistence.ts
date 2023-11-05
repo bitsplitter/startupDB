@@ -96,9 +96,13 @@ const fileTimestampSync = function (fileName: string, db) {
  * find the last file in an opLog folder.
  */
 const mostRecentFile = async function (dirName: string, db: DBConfig) {
-    const files = (await readdir(dirName, db)).map((file) => parseInt(file)).sort((a, b) => a - b)
-    const nrFiles = files.length
-    return files[nrFiles - 1]
+    const files = await readdir(dirName, db)
+    let max = -1
+    for (const file of files) {
+        const fileNr = parseInt(file)
+        if (fileNr > max) max = fileNr
+    }
+    return max
 }
 export default {
     archive,
