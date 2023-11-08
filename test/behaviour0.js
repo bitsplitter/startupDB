@@ -725,40 +725,6 @@ describe('Behaviour: GET /leesplank/origineel?fromOpLogId=1', function () {
     })
 })
 
-describe('Behaviour: GET /leesplank/origineel?fromOpLogId=1 filtered', function () {
-    it('should return an array with filtered operations when requesting a proper oplogId', function (done) {
-        request(app)
-            .get('/leesplank/origineel?fromOpLogId=1&filter=id=="Jet"')
-            .set('Content-type', 'application/json')
-            .expect(200)
-            .expect('Content-Type', 'application/json; charset=utf-8')
-            .expect(function (res) {
-                assert.ok(Array.isArray(res.body))
-                res.body.forEach((object) => {
-                    assert.strictEqual(object.data[0].id, 'Jet')
-                })
-            })
-            .end(done)
-    })
-})
-
-describe('Behaviour: GET /leesplank/origineel?fromOpLogId=1 filtered', function () {
-    it('should return an array with filtered operations when requesting a proper oplogId', function (done) {
-        request(app)
-            .get('/leesplank/origineel?fromOpLogId=1&id=Jet')
-            .set('Content-type', 'application/json')
-            .expect(200)
-            .expect('Content-Type', 'application/json; charset=utf-8')
-            .expect(function (res) {
-                assert.ok(Array.isArray(res.body))
-                res.body.forEach((object) => {
-                    assert.strictEqual(object.data[0].id, 'Jet')
-                })
-            })
-            .end(done)
-    })
-})
-
 describe('Behaviour empty command', function () {
     it('executing an empty command should return a 400', function (done) {
         request(app).post('/leesplank').set('Content-type', 'application/json').send({}).expect(400).end(done)
@@ -1050,8 +1016,6 @@ describe('Behaviour: GET /leesplank/array?fromOpLogId=1', function () {
             .get('/leesplank/array?fromOpLogId=1')
             .set('Content-type', 'application/json')
             .expect(200)
-            .expect('x-last-oplog-id', '3')
-            .expect('x-last-checkpoint-time', '0')
             .expect('Content-Type', 'application/json; charset=utf-8')
             .expect(function (res) {
                 assert.ok(Array.isArray(res.body))

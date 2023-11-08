@@ -365,15 +365,6 @@ const executeDBAcommand = async function (req: Req, res: Res, next: NextFunction
  * This will allow a client to update it's remote copy of the database
  */
 const sendOpLog = async function (req: Req, res: Res, next: NextFunction, fromOpLogId: number) {
-    const filterObjectsFromQuery = function (data, query) {
-        if (query.id) return data.filter((object) => object.id == query.id)
-        if (query.filter) {
-            // The filter was compiled earlier so no need for try/catch here
-            myFilter = compileExpression(query.filter, filtrexOptions)
-            return data.filter(myFilter)
-        }
-        return data
-    }
     const collection = req.startupDB.collection
     if (isNaN(fromOpLogId)) return res.sendStatus(400)
 
@@ -385,31 +376,16 @@ const sendOpLog = async function (req: Req, res: Res, next: NextFunction, fromOp
         if (operation.opLogId == fromOpLogId + 1) tooOld = false
         if (prevId != -1 && operation.opLogId > prevId + 1) return // a gap, don't send the rest
         prevId = operation.opLogId
-        const { oldData, data, ...lightOperation } = operation
+        const oldData = operation.oldData
+        const data = operation.data
         if (operation.operation == 'delete') {
-            const filteredData = filterObjectsFromQuery(oldData, req.query)
-            if (filteredData.length > 0) opLog.push({ ...lightOperation, oldData: filteredData })
+            opLog.push({ operation: operation.operation, collection: operation.collection, data: oldData, opLogId: operation.opLogId, timestamp: operation.timestamp })
         }
-        if (operation.operation == 'patch' && oldData) {
-            const patchedData = data.map((patch) => {
-                const document = tools.deepCopy(oldData.find((object) => object.id == patch.id) || {})
-                let patchedDocument = document
-                try {
-                    if (patch.patch) jsonPatch.applyPatch(document, patch.patch).newDocument
-                    else patchedDocument = Object.assign(patchedDocument, patch)
-                } catch (err) {
-                    // return {}
-                }
-                return patchedDocument
-            })
-            const filteredData = filterObjectsFromQuery(patchedData, req.query)
-            const filteredDataKeys = filteredData.map((object) => object.id)
-            const patchData = data.filter((object) => filteredDataKeys.includes(object.id))
-            if (filteredData.length > 0) opLog.push({ ...lightOperation, data: patchData })
+        if (operation.operation == 'patch' || operation.operation == 'update') {
+            opLog.push({ operation: operation.operation, collection: operation.collection, data: data, opLogId: operation.opLogId, timestamp: operation.timestamp })
         }
-        if (operation.operation == 'create' || operation.operation == 'update') {
-            const filteredData = filterObjectsFromQuery(data, req.query)
-            if (filteredData.length > 0) opLog.push({ ...lightOperation, data: filteredData })
+        if (operation.operation == 'create') {
+            opLog.push(operation)
         }
     })
     if (tooOld && opLog.length > 0) return res.sendStatus(404)
@@ -718,15 +694,17 @@ const processMethod = async function (
 ) {
     let response = { statusCode: 0, data: {}, message: '', headers: {} }
     try {
-        for (const beforeFn of preHooks) {
-            response = await beforeFn(req, res, next, req.startupDB.collection)
-            if (response?.statusCode >= 300) return res.status(response.statusCode).send(response.data)
-            if (response?.statusCode != 0) break
+        if (query['filter'] || !(req.method == 'GET' && query['fromOpLogId'])) {
+            for (const beforeFn of preHooks) {
+                response = await beforeFn(req, res, next, req.startupDB.collection)
+                if (response?.statusCode >= 300) return res.status(response.statusCode).send(response.data)
+                if (response?.statusCode != 0) break
+            }
+            if (response?.statusCode == 0) response = await method(req.startupDB, collection, payload, query)
+            for (const afterFn of postHooks) response = await afterFn(req, response)
+            if (response.headers) res.set(response.headers)
+            if (response.statusCode > 200) return res.status(response.statusCode).send(response.message)
         }
-        if (response?.statusCode == 0) response = await method(req.startupDB, collection, payload, query)
-        for (const afterFn of postHooks) response = await afterFn(req, response)
-        if (response.headers) res.set(response.headers)
-        if (response.statusCode > 200) return res.status(response.statusCode).send(response.message)
         if (query['fromOpLogId']) return await sendOpLog(req, res, next, parseInt(query['fromOpLogId']))
     } catch (e) {
         console.log('STARTUPDB Error', e)
