@@ -9,7 +9,7 @@ const debugLogger = debug('startupdb')
  */
 const moveOpLog = async function (collection: string, oldCheckPoint: number, newCheckPoint: number, db: DBConfig) {
     for (let operation = oldCheckPoint; operation <= newCheckPoint; operation++) {
-        persist.archive(`oplog/${collection}/${operation}.json`, db)
+        await persist.archive(`oplog/${collection}/${operation}.json`, db)
     }
 }
 const flush = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, initStartupDB }) {
@@ -46,7 +46,7 @@ const flush = async function (req: Req, commandParameters: DBCommandParameters, 
         debugLogger(err)
         return { statusCode: 500, message: { error: 'Cannot save checkpoint', errorId: 'Wms3x0goxHni' } }
     }
-    if (req.startupDB.options.opLogArchive != undefined) moveOpLog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
+    if (req.startupDB.options.opLogArchive != undefined) await moveOpLog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
     return { response: 'OK' }
 }
 const create = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {

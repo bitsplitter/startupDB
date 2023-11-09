@@ -376,15 +376,10 @@ const sendOpLog = async function (req: Req, res: Res, next: NextFunction, fromOp
         if (operation.opLogId == fromOpLogId + 1) tooOld = false
         if (prevId != -1 && operation.opLogId > prevId + 1) return // a gap, don't send the rest
         prevId = operation.opLogId
-        const oldData = operation.oldData
-        const data = operation.data
-        if (operation.operation == 'delete') {
-            opLog.push({ operation: operation.operation, collection: operation.collection, data: oldData, opLogId: operation.opLogId, timestamp: operation.timestamp })
-        }
         if (operation.operation == 'patch' || operation.operation == 'update') {
-            opLog.push({ operation: operation.operation, collection: operation.collection, data: data, opLogId: operation.opLogId, timestamp: operation.timestamp })
+            opLog.push({ operation: operation.operation, collection: operation.collection, data: operation.data, opLogId: operation.opLogId, timestamp: operation.timestamp })
         }
-        if (operation.operation == 'create') {
+        if (operation.operation == 'create' || operation.operation == 'delete') {
             opLog.push(operation)
         }
     })

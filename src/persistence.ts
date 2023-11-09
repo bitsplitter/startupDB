@@ -53,7 +53,7 @@ const rename = function (newFile: string, oldFile: string, db: DBConfig) {
     })
     return fs.renameSync(path.join(db.dataFiles, newFile), path.join(db.dataFiles, oldFile))
 }
-const archive = function (fileName: string, db: DBConfig) {
+const archive = async function (fileName: string, db: DBConfig) {
     const archiveDir = db.options.opLogArchive!
     db.options.secondaryDataDirs?.forEach((rootDir) => {
         try {
@@ -63,7 +63,7 @@ const archive = function (fileName: string, db: DBConfig) {
         }
     })
     try {
-        fs.moveSync(path.join(db.dataFiles, fileName), path.join(archiveDir, fileName), { overwrite: true })
+        await fs.move(path.join(db.dataFiles, fileName), path.join(archiveDir, fileName), { overwrite: true })
     } catch (e) {
         // Don't panic
     }
