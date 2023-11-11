@@ -11,6 +11,8 @@ const debugLogger = util.debuglog('startupdb')
 import persist from './persistence'
 import dbaCommands from './dbaCommands'
 import tools from './tools'
+import fs from 'fs-extra'
+
 /**
 * startupDB is a "no DB". A filebased database.
 * It is meant to fast and cost effective for databases that 'fit in memory'.
@@ -480,13 +482,12 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
     }
 }
 
-const getRawCheckpoint = async function (req: Req, res: Res, next: NextFunction, collection: string, fileName: string) {
+const getRawCheckpoint = function (req: Req, res: Res, next: NextFunction, collection: string, fileName: string) {
     const db = req.startupDB
     const dataDirectory = './checkpoint/' + collection
-    const raw = <string>(<unknown>await persist.readFile(dataDirectory, fileName, db))
     if (fileName.includes('.gz')) res.set('Content-Encoding', 'gzip')
     res.set('Content-Type', 'application/json')
-    res.send(raw)
+    fs.createReadStream(path.join(db.dataFiles, dataDirectory, fileName)).pipe(res)
     return
 }
 const rawCheckpointExists = async function (req: Req, res: Res, next: NextFunction, collection: string, fileName: string) {
@@ -773,9 +774,9 @@ const db = function (options: DBOptions) {
             return await executeDBAcommand(req, res, next, req.startupDB.beforeGet, req.startupDB.afterGet)
         }
         if (options.serveRawCheckpoint && req.method == 'GET' && req.query.returnType == 'checkPoint' && (await rawCheckpointExists(req, res, next, collection, 'latest.json.gz')))
-            return await getRawCheckpoint(req, res, next, collection, 'latest.json.gz')
+            return getRawCheckpoint(req, res, next, collection, 'latest.json.gz')
         if (options.serveRawCheckpoint && req.method == 'GET' && req.query.returnType == 'checkPoint' && (await rawCheckpointExists(req, res, next, collection, 'latest.json')))
-            return await getRawCheckpoint(req, res, next, collection, 'latest.json')
+            return getRawCheckpoint(req, res, next, collection, 'latest.json')
         if (req.method == 'GET') return await processMethod(req, res, next, collection, query, [], req.startupDB.beforeGet, dbGetObjects, req.startupDB.afterGet)
         if (req.method == 'HEAD') return await processMethod(req, res, next, collection, query, [], [], dbAnalyzeObjects, [])
 
