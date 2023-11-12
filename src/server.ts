@@ -443,13 +443,20 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
         if (returnType == 'checkpoint') {
             const theOneObject = {}
             theOneObject[id] = startupDB[collectionId].data[id]
+            const json = startupDB[collectionId]
             return {
+                statusCode: 200,
                 data: {
-                    ...startupDB[collectionId],
+                    options: json.options,
+                    lastAccessed: json.lastAccessed,
+                    lastModified: json.lastModified,
                     data: theOneObject,
+                    checkPoint: json.checkPoint,
+                    nextOpLogId: json.nextOpLogId,
+                    savedAt: json.savedAt,
+                    length: json.length,
                 },
                 headers: headers,
-                statusCode: 200,
             }
         }
         return { statusCode: 200, data: startupDB[collectionId].data[id] }
@@ -466,7 +473,21 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
                 acc[item.id] = item
                 return acc
             }, {})
-            return { statusCode: 200, data: { ...startupDB[collectionId], data: filteredObject } }
+            const json = startupDB[collectionId]
+            return {
+                statusCode: 200,
+                data: {
+                    options: json.options,
+                    lastAccessed: json.lastAccessed,
+                    lastModified: json.lastModified,
+                    data: filteredObject,
+                    checkPoint: json.checkPoint,
+                    nextOpLogId: json.nextOpLogId,
+                    savedAt: json.savedAt,
+                    length: json.length,
+                },
+                headers: headers,
+            }
         }
         return { statusCode: 200, data: filteredArray }
     } else {
