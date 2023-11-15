@@ -41,6 +41,18 @@ The `GET` method retrieved data from the database. Retrieving data from a non ex
 
 The filter parameter supports sandboxed javascript expressions as implemented by [filtrex](https://www.npmjs.com/package/filtrex).
 
+### offset and limit parameters
+
+`GET localhost:3000/myDB/user?offset=10&limit=10` will return documents 11 - 20.
+
+### returnType parameter
+
+returnType parameter can be **object**, **checkPoint** or **array** (default)
+
+`GET localhost:3000/myDB/user?returnType=object` will return all documents as an object using the **id** field as a key.
+
+`GET localhost:3000/myDB/user?returnType=checkpoint` will return all documents as stored in the checkPoint including metadata. The nextOplogId in the metadata can be used for oplog polling.
+
 ### POST
 
 The `POST` method adds new documents to the database. POSTing data to a non existing collection will create the collection. The body can contain one object or an array of objects. If the objects have no **id** property, one will be added to each document containing a version 4 UUID string.

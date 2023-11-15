@@ -393,6 +393,40 @@ describe('Behaviour: GET /leesplank/origineel', function () {
     })
 })
 
+describe('Behaviour: GET /leesplank/origineel?limit=2', function () {
+    it('should return an array with operations when requesting a proper oplogId', function (done) {
+        request(app)
+            .get('/leesplank/origineel?limit=2')
+            .set('Content-type', 'application/json')
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect(function (res) {
+                assert.ok(Array.isArray(res.body))
+                assert.strictEqual(res.body[0].id, 'Aap')
+                assert.strictEqual(res.body[1].id, 'Noot')
+                assert.strictEqual(res.body.length, 2)
+            })
+            .end(done)
+    })
+})
+
+describe('Behaviour: GET /leesplank/origineel?limit=2&offset=1', function () {
+    it('should return an array with operations when requesting a proper oplogId', function (done) {
+        request(app)
+            .get('/leesplank/origineel?limit=2&offset=1')
+            .set('Content-type', 'application/json')
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect(function (res) {
+                assert.ok(Array.isArray(res.body))
+                assert.strictEqual(res.body[0].id, 'Noot')
+                assert.strictEqual(res.body[1].id, 'Mies')
+                assert.strictEqual(res.body.length, 2)
+            })
+            .end(done)
+    })
+})
+
 describe('Behaviour: DELETE one document from /leesplank/origineel', function () {
     it('should return the original document', function (done) {
         request(app)

@@ -435,6 +435,8 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
     const id = query['id']
     const filter = query['filter']
     const returnType = (query['returnType'] || 'array').toLowerCase()
+    const limit = parseInt(query['limit']) || 0
+    const offset = parseInt(query['offset']) || 0
     if (!(await loadCollection(db, collection))) return { statusCode: 500, message: { error: 'Cannot load resource', errorId: '7d91kl3nw5z0' } }
 
     const headers = getHeaders(collectionId)
@@ -489,7 +491,8 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
                 headers: headers,
             }
         }
-        return { statusCode: 200, data: filteredArray }
+        if (limit) return { statusCode: 200, data: filteredArray.slice(offset, offset + limit) }
+        else return { statusCode: 200, data: filteredArray }
     } else {
         // Return entire collection
         switch (returnType) {
@@ -498,7 +501,15 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
             case 'checkpoint':
                 return { statusCode: 200, data: startupDB[collectionId], headers: headers }
             default:
-                return { statusCode: 200, data: Object.keys(startupDB[collectionId].data).map((id) => startupDB[collectionId].data[id]), headers: headers }
+                if (limit)
+                    return {
+                        statusCode: 200,
+                        data: Object.keys(startupDB[collectionId].data)
+                            .map((id) => startupDB[collectionId].data[id])
+                            .slice(offset, offset + limit),
+                        headers: headers,
+                    }
+                else return { statusCode: 200, data: Object.keys(startupDB[collectionId].data).map((id) => startupDB[collectionId].data[id]), headers: headers }
         }
     }
 }
