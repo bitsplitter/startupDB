@@ -115,6 +115,8 @@ The options object allows you to configure the following options:
 | validator | function | undefined | Function to validate schema |
 | addTimeStamps | function | undefined | Function to add create/modified timestamps. |
 | opLogArchive | string | undefined| Path to archive directory |
+| serveRawCheckpoint | boolean | false| Stream checkpoint to client, does not keep resource in memory |
+| streamObjects | boolean | false| Stream json repsonse to client, does not block the event loop even for large payloads |
 
 #### Schema validation
 

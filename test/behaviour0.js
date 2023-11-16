@@ -123,6 +123,8 @@ app.use(
                 })
             return serializePayload.includes('reject this document')
         },
+        streamObjects: true,
+        serveRawCheckpoint: true,
     })
 )
 
