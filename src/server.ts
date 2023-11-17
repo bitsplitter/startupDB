@@ -12,7 +12,7 @@ import persist from './persistence'
 import dbaCommands from './dbaCommands'
 import tools from './tools'
 import fs from 'fs-extra'
-const { Readable } = require('stream')
+import streams from './streams'
 
 /**
 * startupDB is a "no DB". A filebased database.
@@ -87,29 +87,6 @@ const DB_CACHE_OVERHEAD_RATIO = 2 // TODO: Make configurable
 const DB_CACHE_FRACTION = 80 / 100 // Fraction of memory to use for Database cache, leave the rest for API and NodeJS. TODO: Make configurable
 const MAX_BYTES_IN_MEMORY = parseInt('' + (v8.getHeapStatistics().heap_size_limit * DB_CACHE_FRACTION) / DB_CACHE_OVERHEAD_RATIO)
 const GC_SWEEP_PERCENTAGE = 20 // Percentage of memory to sweep to prevent the GC to kick in too frequently
-
-class ObjectStream extends Readable {
-    constructor(obj) {
-        super({ objectMode: true })
-        this.keys = Object.keys(obj)
-        this.index = 0
-        this.obj = obj
-    }
-
-    _read() {
-        if (this.index == 0) this.push('{')
-        if (this.index < this.keys.length) {
-            const key = this.keys[this.index]
-            const value = JSON.stringify(this.obj[key])
-            if (value) this.push((this.index != 0 ? ',' : '') + `"${key}":${value}`)
-            else this.push('')
-            this.index++
-        } else {
-            this.push('}')
-            this.push(null) // No more data
-        }
-    }
-}
 
 const propFunction = function (propertyName: string, get: (arg0: string) => any, obj: any) {
     const positionOfDot = propertyName.indexOf('.')
@@ -740,9 +717,9 @@ const processMethod = async function (
     collection: string,
     query: any,
     payload: ArrayOfDBDataObjects,
-    preHooks,
+    preHooks: Function[],
     method: Function,
-    postHooks
+    postHooks: Function[]
 ) {
     let response = { statusCode: 0, data: {}, message: '', headers: {} }
     try {
@@ -763,9 +740,14 @@ const processMethod = async function (
         if (typeof req.startupDB.options.sentry?.captureException == 'function') req.startupDB.options.sentry.captureException(e)
         return res.status(500).send('')
     }
-    if (!req.startupDB.options?.streamObjects || !response.data || Array.isArray(response.data) || typeof response.data == 'string') return res.send(response.data)
+    if (!req.startupDB.options?.streamObjects || !response.data || typeof response.data == 'string') return res.send(response.data)
     res.set('Content-Type', 'application/json')
-    const objectStream = new ObjectStream(response.data)
+    if (Array.isArray(response.data)) {
+        const arrayStream = new streams.ArrayStream(response.data)
+        arrayStream.pipe(res)
+        return
+    }
+    const objectStream = new streams.ObjectStream(response.data)
     objectStream.pipe(res)
 }
 

@@ -38,6 +38,8 @@ app.use(
                 if (oldObject) object.__created = oldObject.__created
             }
         },
+        streamObjects: true,
+        serveRawCheckpoint: true,
     })
 )
 

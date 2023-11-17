@@ -15,7 +15,7 @@ const startupDB = require('../dist/server.js')
 
 app.use(express.json({ inflate: true, limit: '100mb' }))
 
-app.use('/leesplank', startupDB.db())
+app.use('/leesplank', startupDB.db({ streamObjects: true, serveRawCheckpoint: true }))
 const server = app.listen(3456)
 
 describe('Behaviour flush command', function () {

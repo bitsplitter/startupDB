@@ -1,3 +1,7 @@
+# v1.0.41
+
+-   Added option to streaam json arrays to client preventing unblocking the eventloop for large payloads
+
 # v1.0.40
 
 -   Added option to streaam json objects to client preventing unblocking the eventloop for large payloads
