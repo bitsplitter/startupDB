@@ -1,4 +1,7 @@
 const { Readable } = require('stream')
+
+const MAX_BUFFER_SIZE = 65536
+
 class ObjectStream extends Readable {
     constructor(obj) {
         super({ objectMode: true })
@@ -8,14 +11,16 @@ class ObjectStream extends Readable {
     }
 
     _read() {
+        let buf = ''
         if (this.index == 0) this.push('{')
-        if (this.index < this.keys.length) {
+        while (this.index < this.keys.length && buf.length < MAX_BUFFER_SIZE) {
             const key = this.keys[this.index]
             const value = JSON.stringify(this.obj[key])
-            if (value) this.push((this.index != 0 ? ',' : '') + `"${key}":${value}`)
-            else this.push('')
+            if (value) buf = buf + (this.index != 0 ? ',' : '') + `"${key}":${value}`
             this.index++
-        } else {
+        }
+        if (buf.length > 0) this.push(buf)
+        if (this.index >= this.keys.length) {
             this.push('}')
             this.push(null) // No more data
         }
@@ -31,18 +36,21 @@ class ArrayStream extends Readable {
     }
 
     _read() {
+        let buf = ''
         if (this.index == 0) this.push('[')
-        if (this.index < this.length) {
+        while (this.index < this.length && buf.length < MAX_BUFFER_SIZE) {
             const value = JSON.stringify(this.obj[this.index])
-            if (value) this.push((this.index != 0 ? ',' : '') + value)
-            else this.push('')
+            if (value) buf = buf + (this.index != 0 ? ',' : '') + value
             this.index++
-        } else {
+        }
+        if (buf.length > 0) this.push(buf)
+        if (this.index >= this.length) {
             this.push(']')
             this.push(null) // No more data
         }
     }
 }
+
 export default {
     ObjectStream,
     ArrayStream,
