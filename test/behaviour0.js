@@ -429,6 +429,20 @@ describe('Behaviour: GET /leesplank/origineel?limit=2&offset=1', function () {
     })
 })
 
+describe('Behaviour: GET /leesplank/origineel?returnType=tally', function () {
+    it('should return the number of documents', function (done) {
+        request(app)
+            .get('/leesplank/origineel?returnType=tally')
+            .set('Content-type', 'application/json')
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect(function (res) {
+                console.log('res', res.body)
+                assert.strictEqual(res.body.tally, 6)
+            })
+            .end(done)
+    })
+})
 describe('Behaviour: DELETE one document from /leesplank/origineel', function () {
     it('should return the original document', function (done) {
         request(app)

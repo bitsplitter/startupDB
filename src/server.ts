@@ -499,6 +499,8 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
         switch (returnType) {
             case 'object':
                 return { statusCode: 200, data: startupDB[collectionId].data, headers: headers }
+            case 'tally':
+                return { statusCode: 200, data: { tally: Object.keys(startupDB[collectionId].data).length }, headers: headers }
             case 'checkpoint':
                 return { statusCode: 200, data: startupDB[collectionId], headers: headers }
             default:
