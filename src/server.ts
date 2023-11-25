@@ -407,14 +407,9 @@ const getOfflineHeaders = async function (collectionId: string, db: DBConfig) {
 /**
  *
  * Get metadata about objects from a given collection.
- * Used to implement the HEAD method
- *
- * Return 200: no body
- * Return 400: when the query is malformed
- * Return 404: when the collection does not exist
  *
  */
-const dbAnalyzeObjects = async function (db: DBConfig, collectionId: string) {
+const dbGetHeaders = async function (db: DBConfig, collectionId: string) {
     return { headers: await getOfflineHeaders(collectionId, db) }
 }
 
@@ -821,7 +816,7 @@ const db = function (options: DBOptions) {
         if (options.serveRawCheckpoint && req.method == 'GET' && req.query.returnType == 'checkPoint' && (await rawCheckpointExists(req, res, next, collection, 'latest.json')))
             return getRawCheckpoint(req, res, next, collection, 'latest.json')
         if (req.method == 'GET') return await processMethod(req, res, next, collection, query, [], req.startupDB.beforeGet, dbGetObjects, req.startupDB.afterGet)
-        if (req.method == 'HEAD') return await processMethod(req, res, next, collection, query, [], [], dbAnalyzeObjects, [])
+        if (req.method == 'HEAD') return await processMethod(req, res, next, collection, query, [], [], dbGetHeaders, [])
 
         if (options.readOnly) return res.sendStatus(403)
         // Be strict about what we consume
