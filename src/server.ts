@@ -400,7 +400,7 @@ const getOfflineHeaders = async function (collectionId: string, db: DBConfig) {
     const oplogFolder = './oplog/' + collectionId
 
     return {
-        'x-last-checkpoint-time': persist.fileTimestampSync(fileName, db),
+        'x-last-checkpoint-time': await persist.fileTimestamp(fileName, db),
         'x-last-oplog-id': (await persist.mostRecentFile(oplogFolder, db)) || -1,
     }
 }

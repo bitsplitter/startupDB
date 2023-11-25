@@ -85,9 +85,9 @@ const rmdirSync = function (dirName: string, db: DBConfig) {
 const existsSync = function (fileName: string, db: DBConfig) {
     return fs.existsSync(path.join(db.dataFiles, fileName))
 }
-const fileTimestampSync = function (fileName: string, db) {
+const fileTimestamp = async function (fileName: string, db) {
     try {
-        return fs.statSync(path.join(db.dataFiles, fileName))?.mtimeMs
+        return (await fs.stat(path.join(db.dataFiles, fileName)))?.mtimeMs
     } catch {
         return 0
     }
@@ -107,7 +107,7 @@ const mostRecentFile = async function (dirName: string, db: DBConfig) {
 export default {
     archive,
     existsSync,
-    fileTimestampSync,
+    fileTimestamp,
     mostRecentFile,
     readdir,
     readdirRecursive,
