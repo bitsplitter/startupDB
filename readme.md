@@ -137,7 +137,7 @@ validator(collection, documents)
 
 startupDB can auto-timestamp your documents using the `options.addTimeStamps` function.
 
-This function will be called when documents are created or modified. The timestamp function wil be called before your documents will be validated so make sure your schema understand your timestamps.
+This function will be called when documents are created or modified. The timestamp function wil be called before your documents will be validated so make sure your schema includes your timestamps when you use te optional schema validation.
 
 Your function should implement the following interface:
 
