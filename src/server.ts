@@ -397,16 +397,16 @@ const getHeaders = function (collectionId: string) {
 }
 const getOfflineHeaders = async function (collectionId: string, db: DBConfig) {
     const ndJsonFileName = './checkpoint/' + collectionId + '/latest.ndjson'
+    const oplogFolder = './oplog/' + collectionId
     if (persist.existsSync(ndJsonFileName, db)) {
         const fsStats = await persist.fileStats(ndJsonFileName, db)
         return {
             'x-last-checkpoint-time': fsStats.birthtimeMs,
-            'x-last-oplog-id': fsStats.size || -1,
+            'x-last-oplog-id': (await persist.mostRecentFile(oplogFolder, db)) || -1,
             'Content-Type': 'application/x-ndjson',
         }
     }
     const fileName = './checkpoint/' + collectionId + '/latest.json'
-    const oplogFolder = './oplog/' + collectionId
 
     return {
         'x-last-checkpoint-time': (await persist.fileStats(fileName, db)).birthtimeMs,
