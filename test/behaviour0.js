@@ -1083,7 +1083,7 @@ describe('Behaviour: GET /leesplank/array?fromOpLogId=1&filter=faulty=*=3', func
             .end(done)
     })
 })
-describe('Implementation POST /leesplank', function () {
+describe('Behaviour POST /leesplank', function () {
     it("executing a flush command with storageType='array' creates a checkpoint", function (done) {
         request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'flush', collection: 'array' }).expect(200).end(done)
     })
