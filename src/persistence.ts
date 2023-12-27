@@ -2,6 +2,7 @@ import { DBConfig } from './types'
 
 import fs from 'fs-extra'
 import path from 'path'
+const highWaterMark = 64 * 1024
 
 const writeFileSync = function (dirName: string, fileName: string, payload: string, db: DBConfig) {
     db.options.secondaryDataDirs?.forEach((rootDir) => {
@@ -105,6 +106,68 @@ const mostRecentFile = async function (dirName: string, db: DBConfig) {
     }
     return max
 }
+
+function drain(writer) {
+    return new Promise((resolve) => writer.once('drain', resolve))
+}
+
+async function writeCheckpointToStream(metaData: any, json: any, dirName: string, fileName: string, db: DBConfig) {
+    try {
+        fs.ensureDirSync(path.join(db.dataFiles, dirName))
+
+        const writer = fs.createWriteStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, flags: 'a' })
+        if (!writer.write(JSON.stringify(metaData) + '\n')) await drain(writer)
+        if (Array.isArray(json)) {
+            for (const obj of json) if (!writer.write(JSON.stringify(obj) + '\n')) await drain(writer)
+        } else {
+            for (const obj of Object.values(json)) if (!writer.write(JSON.stringify(obj) + '\n')) await drain(writer)
+        }
+        writer.end()
+    } catch (err) {
+        console.log(err)
+    }
+}
+
+async function readCheckpointFromStream(dirName: string, fileName: string, db: DBConfig): Promise<any> {
+    return new Promise((resolve, reject) => {
+        const newObject = {} as any
+        let buf = ''
+        let totalBytes = 0
+        let reader
+        try {
+            reader = fs.createReadStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark })
+        } catch (err) {
+            resolve({})
+            return
+        }
+        reader.on('data', function (chunk) {
+            buf += chunk
+            totalBytes += chunk.length
+            do {
+                const newLinePos = buf.indexOf('\n')
+                if (newLinePos == -1) break
+                const line = buf.substring(0, newLinePos)
+                buf = buf.substring(newLinePos + 1)
+
+                if (!line) continue
+                const obj = JSON.parse(line)
+                if (!newObject.data) Object.assign(newObject, obj)
+                else {
+                    if (Array.isArray(newObject.data)) newObject.data.push(obj)
+                    else newObject.data[obj.id] = obj
+                }
+            } while (true)
+        })
+        reader.on('end', function () {
+            newObject.totalBytes = totalBytes
+            resolve(newObject)
+        })
+        reader.on('error', (err) => {
+            if (err.code == 'ENOENT') resolve({})
+            reject()
+        })
+    })
+}
 export default {
     archive,
     existsSync,
@@ -117,4 +180,6 @@ export default {
     rmdirSync,
     writeFile,
     writeFileSync,
+    writeCheckpointToStream,
+    readCheckpointFromStream,
 }

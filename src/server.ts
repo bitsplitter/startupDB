@@ -265,22 +265,26 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     if (!startupDB[collectionId] || startupDB[collectionId].nextOpLogId == 1) {
         debugLogger('Locked ' + collection)
         try {
-            const raw = <string>(<unknown>await persist.readFile(dataDirectory, 'latest.json', db))
-            // This contains a previously saved checkpoint
-            startupDB[collectionId] = JSON.parse(raw)
-            startupDB[collectionId].lock = mutex
-            startupDB[collectionId].lastAccessed = new Date().getTime()
-            startupDB[collectionId].length = raw.length
-            usedBytesInMemory += raw.length
-            checkPoint = startupDB[collectionId].checkPoint
+            const ndJsononObject = await persist.readCheckpointFromStream(dataDirectory, 'latest.ndjson', db)
+            if (ndJsononObject.savedAt) {
+                startupDB[collectionId] = ndJsononObject
+                startupDB[collectionId].length = ndJsononObject.totalBytes
+            } else {
+                const raw = <string>(<unknown>await persist.readFile(dataDirectory, 'latest.json', db))
+                // This contains a previously saved checkpoint
+                startupDB[collectionId] = JSON.parse(raw)
+                startupDB[collectionId].length = raw.length
+            }
         } catch (err) {
             if (err.code == 'ENOENT') {
                 // Pretend that there is an empty collection
                 startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
-                startupDB[collectionId].lock = mutex
-                startupDB[collectionId].lastAccessed = new Date().getTime()
             }
         }
+        startupDB[collectionId].lock = mutex
+        startupDB[collectionId].lastAccessed = new Date().getTime()
+        checkPoint = startupDB[collectionId].checkPoint
+        usedBytesInMemory += startupDB[collectionId].length
         await processOplog(collection, db, checkPoint, function (operation: Operation, length: number) {
             startupDB[collectionId].nextOpLogId = operation.opLogId + 1
             applyCRUDoperation(operation, db, length)
@@ -398,7 +402,7 @@ const getHeaders = function (collectionId: string) {
 const getOfflineHeaders = async function (collectionId: string, db: DBConfig) {
     const ndJsonFileName = './checkpoint/' + collectionId + '/latest.ndjson'
     const oplogFolder = './oplog/' + collectionId
-    if (persist.existsSync(ndJsonFileName, db)) {
+    if (persist.existsSync(ndJsonFileName, db) || persist.existsSync(ndJsonFileName + '.gz', db)) {
         const fsStats = await persist.fileStats(ndJsonFileName, db)
         return {
             'x-last-checkpoint-time': fsStats.birthtimeMs,
@@ -526,7 +530,8 @@ const getRawCheckpoint = function (req: Req, res: Res, next: NextFunction, colle
     const db = req.startupDB
     const dataDirectory = './checkpoint/' + collection
     if (fileName.includes('.gz')) res.set('Content-Encoding', 'gzip')
-    res.set('Content-Type', 'application/json')
+    if (fileName.includes('.ndjson')) res.set('Content-Type', 'application/x-ndjson')
+    else res.set('Content-Type', 'application/json')
     fs.createReadStream(path.join(db.dataFiles, dataDirectory, fileName)).pipe(res)
     return
 }
@@ -750,12 +755,12 @@ const processMethod = async function (
     if (!req.startupDB.options?.streamObjects || !response.data || typeof response.data == 'string') return res.send(response.data)
     res.set('Content-Type', 'application/json')
     if (Array.isArray(response.data)) {
-        const arrayStream = new streams.ArrayStream(response.data)
-        arrayStream.pipe(res)
+        const jsonArrayStream = new streams.jsonArrayStream(response.data)
+        jsonArrayStream.pipe(res)
         return
     }
-    const objectStream = new streams.ObjectStream(response.data)
-    objectStream.pipe(res)
+    const jsonObjectStream = new streams.jsonObjectStream(response.data)
+    jsonObjectStream.pipe(res)
 }
 
 /**
@@ -821,10 +826,11 @@ const db = function (options: DBOptions) {
             req.body = { command: 'list' }
             return await executeDBAcommand(req, res, next, req.startupDB.beforeGet, req.startupDB.afterGet)
         }
-        if (options.serveRawCheckpoint && req.method == 'GET' && req.query.returnType == 'checkPoint' && (await rawCheckpointExists(req, res, next, collection, 'latest.json.gz')))
-            return getRawCheckpoint(req, res, next, collection, 'latest.json.gz')
-        if (options.serveRawCheckpoint && req.method == 'GET' && req.query.returnType == 'checkPoint' && (await rawCheckpointExists(req, res, next, collection, 'latest.json')))
-            return getRawCheckpoint(req, res, next, collection, 'latest.json')
+        const fileNameScanOrder = req.headers['accept'] == 'application/x-ndjson' ? ['latest.ndjson.gz', 'latest.ndjson'] : ['latest.json.gz', 'latest.json']
+        for (const fileName of fileNameScanOrder) {
+            if (options.serveRawCheckpoint && req.method == 'GET' && req.query.returnType == 'checkPoint' && (await rawCheckpointExists(req, res, next, collection, fileName)))
+                return getRawCheckpoint(req, res, next, collection, fileName)
+        }
         if (req.method == 'GET') return await processMethod(req, res, next, collection, query, [], req.startupDB.beforeGet, dbGetObjects, req.startupDB.afterGet)
         if (req.method == 'HEAD') return await processMethod(req, res, next, collection, query, [], [], dbGetHeaders, [])
 

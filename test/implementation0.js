@@ -128,6 +128,42 @@ describe('Implementation: POST /leesplank (flush origineel )', function () {
     })
 })
 
+describe('Implementation: POST /leesplank/ndjson)', function () {
+    it('should should prepare a collection for the next test', function (done) {
+        request(app)
+            .post('/leesplank/ndjson')
+            .set('Content-type', 'application/json')
+            .send([{ id: 'type', description: 'Newline Delimited JSON.' }])
+            .end(done)
+    })
+})
+describe('Implementation: POST /leesplank (flush ndjson )', function () {
+    it('should create an ndjson checkpoint file', function (done) {
+        request(app)
+            .post('/leesplank')
+            .set('Content-type', 'application/json')
+            .send({ command: 'flush', collection: 'ndjson', options: { contentType: 'ndjson', force: true } })
+            .expect(200)
+            .expect(function (res) {
+                assert.ok(fs.existsSync('./leesplank/checkpoint/ndjson/latest.ndjson'))
+            })
+            .end(done)
+    })
+})
+describe('Implementation: POST /leesplank (drop ndjson )', function () {
+    it('should drop the ndjson checkpoint file', function (done) {
+        request(app)
+            .post('/leesplank')
+            .set('Content-type', 'application/json')
+            .send({ command: 'drop', collection: 'ndjson' })
+            .expect(200)
+            .expect(function (res) {
+                assert.ok(!fs.existsSync('./leesplank/checkpoint/ndjson/latest.ndjson'))
+            })
+            .end(done)
+    })
+})
+
 describe('Implementation: POST /leesplank (flush nieuw)', function () {
     it('should create a checkpoint file when there are unflushed documents', function (done) {
         request(app)

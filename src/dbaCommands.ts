@@ -15,16 +15,20 @@ const moveOpLog = async function (collection: string, oldCheckPoint: number, new
 const flush = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, initStartupDB }) {
     const collection = commandParameters.collection
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'tp5ut557FOBN' } }
+
+    const contentType = commandParameters.options?.contentType
+    const force = commandParameters.options?.force
+    const fileType = contentType == 'ndjson' ? '.ndjson' : '.json'
     const oplogFiles = await persist.readdir('./oplog/' + collection, req.startupDB)
-    if (oplogFiles.length == 0) return { response: 'OK' }
+    if (oplogFiles.length == 0 && !force) return { response: 'OK' }
     const dataFiles = req.startupDB.dataFiles
     const collectionId = dataFiles + '/' + collection
     if (!startupDB[collectionId]?.data) await initStartupDB(req.startupDB, collection)
     const oldCheckPoint = startupDB[collectionId].checkPoint
     const newCheckPoint = startupDB[collectionId].nextOpLogId - 1
-    if (oldCheckPoint > 0)
+    if (oldCheckPoint > 0 && persist.existsSync('./checkpoint/' + collection + '/latest' + fileType, req.startupDB))
         try {
-            persist.rename('./checkpoint/' + collection + '/latest.json', './checkpoint/' + collection + '/' + oldCheckPoint + '.json', req.startupDB)
+            persist.rename('./checkpoint/' + collection + '/latest' + fileType, './checkpoint/' + collection + '/' + oldCheckPoint + fileType, req.startupDB)
         } catch (err) {
             return { statusCode: 500, message: { error: 'Unable to rename checkpoint', errorId: '2aH6sQe0Ojkc' } }
         }
@@ -32,19 +36,34 @@ const flush = async function (req: Req, commandParameters: DBCommandParameters, 
     startupDB[collectionId].checkPoint = newCheckPoint
     startupDB[collectionId].savedAt = new Date()
     let bufferToPersist = ''
-    try {
-        const serialized = JSON.stringify(startupDB[collectionId])
-        bufferToPersist = serialized
-    } catch (err) {
-        debugLogger(err)
-        return { statusCode: 500, message: { error: 'Cannot serialize checkpoint, object too large?', errorId: 'RKdCqPkPyr7p' } }
-    }
+    if (fileType == '.ndjson') {
+        const json = startupDB[collectionId]
+        const ndJsonHeader = {
+            options: json.options,
+            lastAccessed: json.lastAccessed,
+            lastModified: json.lastModified,
+            data: Array.isArray(json.data) ? [] : {},
+            checkPoint: json.checkPoint,
+            nextOpLogId: json.nextOpLogId,
+            savedAt: json.savedAt,
+            dbEngine: '2.0',
+        }
+        await persist.writeCheckpointToStream(ndJsonHeader, json.data, './checkpoint/' + collection, 'latest.ndjson', req.startupDB)
+    } else {
+        try {
+            const serialized = JSON.stringify(startupDB[collectionId])
+            bufferToPersist = serialized
+        } catch (err) {
+            debugLogger(err)
+            return { statusCode: 500, message: { error: 'Cannot serialize checkpoint, object too large?', errorId: 'RKdCqPkPyr7p' } }
+        }
 
-    try {
-        await persist.writeFile('./checkpoint/' + collection, 'latest.json', bufferToPersist, req.startupDB)
-    } catch (err) {
-        debugLogger(err)
-        return { statusCode: 500, message: { error: 'Cannot save checkpoint', errorId: 'Wms3x0goxHni' } }
+        try {
+            await persist.writeFile('./checkpoint/' + collection, 'latest.json', bufferToPersist, req.startupDB)
+        } catch (err) {
+            debugLogger(err)
+            return { statusCode: 500, message: { error: 'Cannot save checkpoint', errorId: 'Wms3x0goxHni' } }
+        }
     }
     if (req.startupDB.options.opLogArchive != undefined) await moveOpLog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
     return { response: 'OK' }
