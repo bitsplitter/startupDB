@@ -796,7 +796,11 @@ const db = function (options: DBOptions) {
 
         req.startupDB.options = options
         req.startupDB.dataFiles = options.dataFiles
-        req.url = decodeURIComponent(req.url)
+        try {
+            req.url = decodeURIComponent(req.url)
+        } catch (err) {
+            return res.sendStatus(400)
+        }
         req.startupDB.collection = req.url.split('?')[0].substring(1)
 
         // Define 'internal' CRUD functions that can be called from hooks functions
