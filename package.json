@@ -1,41 +1,41 @@
 {
-  "name": "startupdb",
-  "version": "1.0.43",
-  "description": "a filebased database for Express",
-  "main": "dist/server.js",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/bitsplitter/startupDB.git"
-  },
-  "scripts": {
-    "test-behaviour": "mocha ./test/behaviour0.js && mocha ./test/behaviour1.js ",
-    "test": "mocha ./test/behaviour0.js && mocha ./test/implementation0.js && mocha ./test/implementation1.js && mocha ./test/behaviour1.js",
-    "coverage": "nyc npm run test",
-    "build": "tsc -p tsconfig.json"
-  },
-  "author": "Jeroen de Vries",
-  "license": "ISC",
-  "devDependencies": {
-    "@types/debug": "^4.1.8",
-    "@types/express": "^4.17.17",
-    "@types/fs-extra": "^11.0.1",
-    "@types/node": "^20.4.0",
-    "@types/uuid": "^9.0.2",
-    "chai": "^4.3.7",
-    "express": "^4.18.2",
-    "mocha": "^10.2.0",
-    "nyc": "^15.1.0",
-    "supertest": "^6.3.3"
-  },
-  "dependencies": {
-    "async-mutex": "^0.4.0",
-    "fast-json-patch": "^3.1.0",
-    "filtrex": "^3.0.0",
-    "fs-extra": "^11.1.1",
-    "typescript": "^5.1.6",
-    "uuid": "^9.0.0"
-  },
-  "overrides": {
-    "semver": "^7.5.3"
-  }
+    "name": "startupdb",
+    "version": "2.0.0",
+    "description": "a filebased database for Express",
+    "main": "dist/server.js",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/bitsplitter/startupDB.git"
+    },
+    "scripts": {
+        "test-behaviour": "mocha ./test/behaviour0.js && mocha ./test/behaviour1.js ",
+        "test": "mocha ./test/behaviour0.js && mocha ./test/implementation0.js && mocha ./test/implementation1.js && mocha ./test/behaviour1.js",
+        "coverage": "nyc npm run test",
+        "build": "tsc -p tsconfig.json"
+    },
+    "author": "Jeroen de Vries",
+    "license": "ISC",
+    "devDependencies": {
+        "@types/debug": "^4.1.8",
+        "@types/express": "^4.17.17",
+        "@types/fs-extra": "^11.0.1",
+        "@types/node": "^20.4.0",
+        "@types/uuid": "^9.0.2",
+        "chai": "^4.3.7",
+        "express": "^4.18.2",
+        "mocha": "^10.2.0",
+        "nyc": "^15.1.0",
+        "supertest": "^6.3.3"
+    },
+    "dependencies": {
+        "async-mutex": "^0.4.0",
+        "fast-json-patch": "^3.1.0",
+        "filtrex": "^3.0.0",
+        "fs-extra": "^11.1.1",
+        "typescript": "^5.1.6",
+        "uuid": "^9.0.0"
+    },
+    "overrides": {
+        "semver": "^7.5.3"
+    }
 }
