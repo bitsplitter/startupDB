@@ -722,17 +722,7 @@ const dbCreateObjects = async function (db: DBConfig, collection: string, payloa
     return { statusCode: 200, data: query?.returnType != 'tally' ? payload : { tally: payload.length } }
 }
 
-const processMethod = async function (
-    req: Req,
-    res: Res,
-    next: NextFunction,
-    collection: string,
-    query: any,
-    payload: ArrayOfDBDataObjects,
-    preHooks: Function[],
-    method: Function,
-    postHooks: Function[]
-) {
+const processMethod = async function (req: Req, res: Res, next: NextFunction, collection: string, query: any, preHooks: Function[], method: Function, postHooks: Function[]) {
     let response = { statusCode: 0, data: {}, message: '', headers: {} }
     try {
         if (query['filter'] || !(req.method == 'GET' && query['fromOpLogId'])) {
@@ -741,7 +731,7 @@ const processMethod = async function (
                 if (response?.statusCode >= 300) return res.status(response.statusCode).send(response.data)
                 if (response?.statusCode != 0) break
             }
-            if (response?.statusCode == 0) response = await method(req.startupDB, collection, payload, query)
+            if (response?.statusCode == 0) response = await method(req.startupDB, collection, req.body, query)
             for (const afterFn of postHooks) response = await afterFn(req, response)
             if (response.headers) res.set(response.headers)
             if (response.statusCode > 200) return res.status(response.statusCode).send(response.message)
@@ -835,8 +825,8 @@ const db = function (options: DBOptions) {
             if (options.serveRawCheckpoint && req.method == 'GET' && req.query.returnType == 'checkPoint' && (await rawCheckpointExists(req, res, next, collection, fileName)))
                 return getRawCheckpoint(req, res, next, collection, fileName)
         }
-        if (req.method == 'GET') return await processMethod(req, res, next, collection, query, [], req.startupDB.beforeGet, dbGetObjects, req.startupDB.afterGet)
-        if (req.method == 'HEAD') return await processMethod(req, res, next, collection, query, [], [], dbGetHeaders, [])
+        if (req.method == 'GET') return await processMethod(req, res, next, collection, query, req.startupDB.beforeGet, dbGetObjects, req.startupDB.afterGet)
+        if (req.method == 'HEAD') return await processMethod(req, res, next, collection, query, [], dbGetHeaders, [])
 
         if (options.readOnly) return res.sendStatus(403)
         // Be strict about what we consume
@@ -854,10 +844,10 @@ const db = function (options: DBOptions) {
         if (req.method == 'POST' && rootRoute) return await executeDBAcommand(req, res, next, req.startupDB.beforePost, req.startupDB.afterPost)
         req.body = tools.ensureArray(req.body)
 
-        if (req.method == 'POST') return await processMethod(req, res, next, collection, query, req.body, req.startupDB.beforePost, dbCreateObjects, req.startupDB.afterPost)
-        if (req.method == 'PUT') return await processMethod(req, res, next, collection, query, req.body, req.startupDB.beforePut, dbUpdateObjects, req.startupDB.afterPut)
-        if (req.method == 'DELETE') return await processMethod(req, res, next, collection, query, req.body, req.startupDB.beforeDelete, dbDeleteObjects, req.startupDB.afterDelete)
-        if (req.method == 'PATCH') return await processMethod(req, res, next, collection, query, req.body, req.startupDB.beforePatch, dbPatchObjects, req.startupDB.afterPatch)
+        if (req.method == 'POST') return await processMethod(req, res, next, collection, query, req.startupDB.beforePost, dbCreateObjects, req.startupDB.afterPost)
+        if (req.method == 'PUT') return await processMethod(req, res, next, collection, query, req.startupDB.beforePut, dbUpdateObjects, req.startupDB.afterPut)
+        if (req.method == 'DELETE') return await processMethod(req, res, next, collection, query, req.startupDB.beforeDelete, dbDeleteObjects, req.startupDB.afterDelete)
+        if (req.method == 'PATCH') return await processMethod(req, res, next, collection, query, req.startupDB.beforePatch, dbPatchObjects, req.startupDB.afterPatch)
 
         next()
     }
