@@ -39,12 +39,12 @@ export type DBConfig = {
     options: DBOptions
     dataFiles: string
     collection: string
-    createObjects?: Function
-    getObjects?: Function
-    updateObjects?: Function
-    deleteObjects?: Function
-    patchObjects?: Function
-    executeDBAcommand?: Function
+    createObjects: Function
+    getObjects: Function
+    updateObjects: Function
+    deleteObjects: Function
+    patchObjects: Function
+    executeDBAcommand: Function
     contentLength: number
 }
 export interface DBDataObject {

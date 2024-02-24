@@ -753,6 +753,21 @@ const processMethod = async function (req: Req, res: Res, next: NextFunction, co
     jsonObjectStream.pipe(res)
 }
 
+const setupStartupDB = function (): DBConfig {
+    const noop = function () {}
+    return {
+        options: {},
+        dataFiles: '',
+        collection: '',
+        contentLength: 0,
+        createObjects: noop,
+        getObjects: noop,
+        updateObjects: noop,
+        deleteObjects: noop,
+        patchObjects: noop,
+        executeDBAcommand: noop,
+    }
+}
 /**
  * Implement the main Express middleware function.
  * Store data on disk in the location specified by options.dataFiles. (default: baserUrl)
@@ -766,13 +781,7 @@ const db = function (options: DBOptions) {
         if (options.dataFiles[0] == '.') options.dataFiles = path.join(process.cwd(), options.dataFiles)
 
         const rootRoute = req.path == '/'
-        if (!req.startupDB)
-            req.startupDB = {
-                options: {},
-                dataFiles: '',
-                collection: '',
-                contentLength: 0,
-            }
+        if (!req.startupDB) req.startupDB = setupStartupDB()
         if (!req.startupDB.beforeGet) req.startupDB.beforeGet = []
         if (!req.startupDB.beforePost) req.startupDB.beforePost = []
         if (!req.startupDB.beforePatch) req.startupDB.beforePatch = []
@@ -858,13 +867,8 @@ const db = function (options: DBOptions) {
 const registerHook = function (hooks: Array<string>, fn: Function) {
     if (typeof fn != 'function') throw 'Registered hook is not a function'
     return async function (req: Req, res: Res, next: NextFunction) {
-        if (!req.startupDB)
-            req.startupDB = {
-                options: {},
-                dataFiles: '',
-                collection: '',
-                contentLength: 0,
-            }
+        if (!req.startupDB) req.startupDB = setupStartupDB()
+
         for (const hook of hooks) {
             if (!req.startupDB[hook]) req.startupDB[hook] = []
             req.startupDB[hook].push(fn)
