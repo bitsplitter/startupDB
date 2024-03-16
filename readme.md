@@ -1,115 +1,233 @@
-# StartupDB 1.0.43: Streaming response
+# startupDB
 
-### Why
+startupDB is a database designed to create REST APIs. It is implemented as an Express middleware function and allows for easy implementation of persistent data endpoints. It features protection from dataloss during hardware failure by persisting individual operations in JSON files and offers high performance by serving all data from memory.
 
-Serving a large payload involves JSON.stringify which blocks the event loop.
+Its CRUD operations map directly to POST, GET, UPDATE/PUT/PATCH and DELETE methods.
 
-# StartupDB 2.0: NDJSON checkpoint
+## Usage
 
-### Why
+Example
 
-Reading a checkpoint involves JSON.parse which blocks the event loop too long.
-Reading an NDJSON checkpoint will never block the event loop for any substantial amount of time because it will call JSON.parse on small strings.
+```
+const express = require('express')
+const startupDB = require('startupDB')
 
--   1st line contains metadata.
+const app = express()
+app.use("/myDB", startupDB.db)
+const server = app.listen(3000)
+```
 
-            {
-            options: {storageType: string <array | object>},
-            lastAccessed: unix timestamp <last accessed in memory>,
-            lastModified: unix timestamp <last modified in memory>,
-            data: object | array <will hold data in memory>,
-            checkPointTime: unix timestamp <last time checkPoint was saved>,
-            checkPointSize: number <size in bytes>,
-            nextOpLogId: number <id for next operation>,
-            savedAt: string <HR checkpointTime>,
-            dbEngine: "2.0"
-            }
+This will create a database under the `myDB` directory. Every endpoint that starts with `/myDB` will translate to a collection with the same name. So `localhost:3000/myDB/user` will implement POST, GET, PUT, DELETE and PATCH endpoints to create, find, update, delete and change user documents. Data will be persisted to disk in `checkpoint/user` and `oplog/user` directories.
 
--   All other lines are objects
--   When reading a checkpoint file:
+## Methods
 
-    -   parse individual json lines
-    -   for array type collections: push each object to the array
-    -   for object type collections: assign each object to it's associated id in the cache.
+StartupDB implements the following methods on all endpoints:
 
-        Skip objects without an id
+### GET
 
--   opLog processing remains unchanged
--   HEAD should:
-    -   **Content-type (json | ndjson)**
-    -   For ndjson return
-        -   **'x-last-checkpoint-time': checkpoint file creation timestamp**
-        -   'x-last-oplog-id': highest oplog filenumber
--   **FLUSH** command should:
-    -   Get additional parameter: Content-type: <json | ndjson>
-    -   When **ndjson** it should create an **ndjson** checkpoint
--   Client.ts
-    -   Match request with content-type from HEAD
--   Client.ts JSON:
-    -   No change
--   Client.js NDJSON:
-    -   parse individual json line
-    -   assign each object to it's associated id in the cache
-    -   opLog processing remains unchanged
+The `GET` method retrieved data from the database. Retrieving data from a non existing collection will result in a `200 OK` and an empty response, it will not return a `400` error.
 
-How to make this backwards compatible?
+### no parameters
 
--   Filename latest.ndjson signifies this new paradigm as returned by HEAD as Content-type
--   Filename lastest.json should behave as is
+`GET localhost:3000/myDB/user` will return all documents in the collection.
 
-### Conversion from 1.x to 2.0
+### id parameter
 
--   Use of NDJSON checkpoints is optional. Create NDJSON checkpoints with the new Content-type parameter in the dba **FLUSH** command.
+`GET localhost:3000/myDB/user?id=peter` will return the document with `id == 'peter'`.
 
-# StartupDB 2.5: NDJSON oplog
+### filter parameter
 
--   Changes metadata record:
+`GET localhost:3000/myDB/user?filter=lastname=="Smith"` will return all documents with `lastName == 'Smith'`.
 
-    -   remove nexOpLogId
-    -   change dbEngine to "2.5"
+The filter parameter supports sandboxed javascript expressions as implemented by [filtrex](https://www.npmjs.com/package/filtrex).
 
-            {
-            options: {storageType: string <array | object>},
-            lastAccessed: unix timestamp <last accessed in memory>,
-            lastModified: unix timestamp <last modified in memory>,
-            data: object | array <will hold data in memory>,
-            checkPointTime: unix timestamp <last time checkPoint was saved>,
-            checkPointSize: number <size in bytes>,
-            savedAt: string <HR checkpointTime>,
-            dbEngine: "2.5"
-            }
+### offset and limit parameters
 
--   HEAD should:
-    -   **Content-type (json | ndjson)**
-    -   For **ndjson** :
-        -   'x-last-checkpoint-time': checkpoint file creation timestamp
-        -   'x-last-oplog-id': oplog file size **_( 'x-last-oplog-id': fsStats.size || -1)_**
--   oplog folder:
+`GET localhost:3000/myDB/user?offset=10&limit=10` will return documents 11 - 20.
 
-    -   opLog is stored in 1 file: latest.json.
-    -   There is no need for a header.
-    -   opLogId now becomes a byte offset in the oplog file
+### returnType parameter
 
--   Operations:
+returnType parameter can be **object**, **checkPoint** or **array** (default)
 
-    -   DELETE and PATCH operation no longer store the old data.
+`GET localhost:3000/myDB/user?returnType=object` will return all documents as an object using the **id** field as a key.
 
--   processOplog:
-    -   parse individual json line
-    -   if it is an object without a $operation property: do same as checkpoint
-    -   if it is an object with $operation and $payload properties =>
-        -   $operation == ‘delete’ delete $payload.id from cache
-        -   $operation == ‘patchAssign’ Object.assign $payload to $payload.id in cache
-        -   $operation == ‘patchDiff’ jsonPatch.applyPatch $payload to $payload.id in cache
--   sendOplog should stream the checkpoint starting at file location ‘opLogId’ (which is now an offset in the oplog file)
--   Client.js NDJSON:
-    -   processOplog like server does. Only difference is that opLogId is not an operation counter but a byte counter.
+`GET localhost:3000/myDB/user?returnType=checkpoint` will return all documents as stored in the checkPoint including metadata. The nextOplogId in the metadata can be used for oplog polling.
 
-# StartupDB 2.6
+### POST
 
-### Re-introduce gziped checkpoints
+The `POST` method adds new documents to the database. POSTing data to a non existing collection will create the collection. The body can contain one object or an array of objects. If the objects have no **id** property, one will be added to each document containing a version 4 UUID string.
 
--   Operations:
+If a document is POSTed with an **id** that already exists in the collection, a `409 conflict` error will be returned. To update an existing document, use the `PUT` or `PATCH` methods.
 
-    -   POST should not check for existing docs, i.e. PUT == POST
-    -   This way, we can stream operations by appending them to the oplog, no need to have the entire collection in memory. If the collection happens to be in memory, the server applies the operation on the in-memory cache after appending it to the oplog. If not, it only streams the operation to the oplog.
+### PUT
+
+The `PUT` method replaces existing documents or created new documents to the database. PUTing data to a non existing collection will create the collection. The body can contain one object or an array of objects. If the objects have no **id** property, one will be added to each document containing a version 4 UUID string. If a document exists in the collection with an **id** mentioned in the body of the `PUT`, the document will be replaced with the new document.
+
+### DELETE
+
+The `DELETE` method removes documents from the database.
+
+### id parameter
+
+`DELETE localhost:3000/myDB/user?id=peter` will delete the document with `id == 'peter'`.
+
+### filter parameter
+
+`DELETE localhost:3000/myDB/user?filter=lastname=="Smith"` will delete all documents with `lastName == 'Smith'`.
+
+The filter parameter supports sandboxed javascript expressions as implemented by [filtrex](https://www.npmjs.com/package/filtrex).
+
+### PATCH
+
+The `PATCH` method updates documents in the database. The body can contain one object or an array of objects. If the objects have no **id** property, one will be added to each document containing a version 4 UUID string.
+
+#### jsonpatch
+
+PATCHes can be performed by [jsonpatch](https://jsonpatch.com/). This allows for lightweight, finegrained updates on large objects. To use **jsonpatch** the objects in the body should follow this schema:
+
+```
+{
+    "id":string
+    "patch":array
+}
+```
+
+#### Object.assign
+
+If the object has any other schema, the PATCH will be performed by javascript [Object.assign](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/assign)
+
+## API
+
+```
+const startupDB = require('startupDB')
+```
+
+### startupDB([options])
+
+Returns the database middleware using the given options
+
+### Options
+
+The options object allows you to configure the following options:
+| Option Name | Type | Default value | Description |
+|-|-|-|-|
+| dataFiles | string | './' | Path to data directory |
+| validator | function | undefined | Function to validate schema |
+| addTimeStamps | function | undefined | Function to add create/modified timestamps. |
+| opLogArchive | string | undefined| Path to archive directory |
+| serveRawCheckpoint | boolean | false| Stream checkpoint to client, does not keep resource in memory |
+| streamObjects | boolean | false| Stream json repsonse to client, does not block the event loop even for large payloads |
+
+#### Schema validation
+
+A schema validator can be passed using the `options.validator` function.
+
+Your function should implement the following interface:
+
+```
+/*
+ * @param {string} operation: "created" or "modified"
+ * @param {object} document: the document to change
+ * @return false | array: false or an array with error messages
+ */
+validator(collection, documents)
+```
+
+#### Timestamps
+
+startupDB can auto-timestamp your documents using the `options.addTimeStamps` function.
+
+This function will be called when documents are created or modified. The timestamp function wil be called before your documents will be validated so make sure your schema includes your timestamps when you use te optional schema validation.
+
+Your function should implement the following interface:
+
+```
+/*
+ * @param {string} operation: "created" or "modified"
+ * @param {object} document: the document to change
+ * @param {object} oldDocument: the old document (before modify)
+ */
+function(operation,document,oldDocument)
+```
+
+Example
+
+```
+function (operation, object, oldObject) {
+        if (operation == "created") object.__created = new Date().getTime()
+        if (operation == "modified") {
+            object.__modified = new Date().getTime()
+            if (oldObject) object.__created = oldObject.__created
+        }
+    }
+```
+
+## Hooks
+
+startupDB support databasehooks to run endpoint specific code either before or after the CRUD operation. They can be used for everything from authentication to data conversion.
+
+A 'before' hook should implement the following interface:
+
+```
+/*
+ * @param {object} req: like in Express
+ * @param {object} res: like in Express
+ * @param {function} next: like in Express
+ * @param {string} collection: the name of the collection
+ *
+ * @return:  {"statusCode":<HTTP StatusCode>,"data":<response body>,"message":<status message>}
+ *
+ * return {"statusCode":0} when there are no errors
+ *
+ */
+function(req, res, next){
+    return {
+        "statusCode":200,
+        "data":{
+            "name":"value"
+        },
+        "message":"OK"
+        }
+}
+```
+
+An 'after' hook should implement the following interface:
+
+```
+/*
+ * @param {object} req: like in Express
+ * @param {object} response: response object from database
+ *
+ * @return:  {"error":<HTTP StatusCode>,"data":<response body>,"message":<status message>,"headers":<response headers>}
+ *
+ * Omit the error property in the response when there are no errors
+ */
+function(req, response){
+    return {
+        "data":response.data
+        }
+}
+```
+
+## Commands
+
+startupDB supports several commands that can be executed by sending a POST or GET request to the root.
+
+For example:
+
+```
+curl --header "Content-Type: application/json" \
+  --request POST \
+  --data "{\"command\":\"purgeOplog\",\"collection\":\"00000/sku\"}" \
+  http://127.0.0.1:3000/data
+```
+
+| Command          | Method | Function                                                                                                                                                                                                                     | Parameters                                           |
+| ---------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+|                  | GET    | List all collections.                                                                                                                                                                                                        |                                                      |
+| create           | POST   | Create collection, errors when it already exists.                                                                                                                                                                            | collection:"string", storageType:"array" or "object" |
+| drop             | POST   | Removes a collection from memory, oplog and checkpoint directories.                                                                                                                                                          | collection:"string"                                  |
+| ensureCollection | POST   | Create collection if it does not exist, no error if it does.                                                                                                                                                                 | collection:"string", storageType:"array" or "object" |
+| flush            | POST   | Create checkpoint and flush oplog.                                                                                                                                                                                           | collection:"string"                                  |
+| inspect          | POST   | return totalNrObjects in memory.                                                                                                                                                                                             |                                                      |
+| purgeOplog       | POST   | remove all operations from opLog, restoring collection to previous checkpoint. This is usefull for implementing tests. Collection parameter can be "\*" to purge all collections or a comma separated string of collections. | collection:"string"                                  |
