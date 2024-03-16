@@ -92,9 +92,8 @@ How to make this backwards compatible?
 
 -   Operations:
 
-    -   POST should not check for existing docs, i.e. PUT == POST
     -   DELETE and PATCH operation no longer store the old data.
-    -   This way, we can stream operations by appending them to the oplog, no need to have the entire collection in memory. If the collection happens to be in memory, the server applies the operation on the in-memory cache after appending it to the oplog. If not, it only streams the operation to the oplog.
+    -   Append operation to single oplog file, do not write every operation to it's own file
 
 -   processOplog:
     -   parse individual json line
@@ -110,3 +109,10 @@ How to make this backwards compatible?
 # StartupDB 2.6
 
 ### Re-introduce gziped checkpoints
+
+### Stream operations
+
+-   Operations:
+
+    -   POST should not check for existing docs, i.e. PUT == POST
+    -   This way, we can stream operations by appending them to the oplog, no need to have the entire collection in memory. If the collection happens to be in memory, the server applies the operation on the in-memory cache after appending it to the oplog. If not, it only streams the operation to the oplog.
