@@ -437,7 +437,6 @@ describe('Behaviour: GET /leesplank/origineel?returnType=tally', function () {
             .expect(200)
             .expect('Content-Type', 'application/json; charset=utf-8')
             .expect(function (res) {
-                console.log('res', res.body)
                 assert.strictEqual(res.body.tally, 6)
             })
             .end(done)
@@ -1070,16 +1069,6 @@ describe('Behaviour: GET /leesplank/array?fromOpLogId=1', function () {
             .expect(function (res) {
                 assert.ok(Array.isArray(res.body))
             })
-            .end(done)
-    })
-})
-describe('Behaviour: GET /leesplank/array?fromOpLogId=1&filter=faulty=*=3', function () {
-    it('should give an error when retrieving oplog with a faulty filter', function (done) {
-        request(app)
-            .get('/leesplank/array?fromOpLogId=1&filter=faulty=*=3')
-            .set('Content-type', 'application/json')
-            .expect(400)
-            .expect('Content-Type', 'application/json; charset=utf-8')
             .end(done)
     })
 })

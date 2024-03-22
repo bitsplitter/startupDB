@@ -725,17 +725,25 @@ const dbCreateObjects = async function (db: DBConfig, collection: string, payloa
 const processMethod = async function (req: Req, res: Res, next: NextFunction, collection: string, query: any, preHooks: Function[], method: Function, postHooks: Function[]) {
     let response = { statusCode: 0, data: {}, message: '', headers: {} }
     try {
-        if (query['filter'] || !(req.method == 'GET' && query['fromOpLogId'])) {
-            for (const beforeFn of preHooks) {
-                response = await beforeFn(req, res, next, req.startupDB.collection)
-                if (response?.statusCode >= 300) return res.status(response.statusCode).send(response.data)
-                if (response?.statusCode != 0) break
-            }
-            if (response?.statusCode == 0) response = await method(req.startupDB, collection, req.body, query)
-            for (const afterFn of postHooks) response = await afterFn(req, response)
-            if (response.headers) res.set(response.headers)
-            if (response.statusCode > 200) return res.status(response.statusCode).send(response.message)
+        for (const beforeFn of preHooks) {
+            response = await beforeFn(req, res, next, req.startupDB.collection)
+            if (response?.statusCode >= 300) return res.status(response.statusCode).send(response.data)
+            if (response?.statusCode != 0) break
         }
+        if (response?.statusCode == 0) {
+            if (req.method == 'GET' && query['fromOpLogId']) return await sendOpLog(req, res, next, parseInt(query['fromOpLogId']))
+            if (req.method == 'GET' && query.returnType == 'checkPoint') {
+                const fileNameScanOrder = req.headers['accept'] == 'application/x-ndjson' ? ['latest.ndjson.gz', 'latest.ndjson'] : ['latest.json.gz', 'latest.json']
+                for (const fileName of fileNameScanOrder) {
+                    if (req.startupDB.options.serveRawCheckpoint && (await rawCheckpointExists(req, res, next, collection, fileName)))
+                        return getRawCheckpoint(req, res, next, collection, fileName)
+                }
+            }
+            response = await method(req.startupDB, collection, req.body, query)
+        }
+        for (const afterFn of postHooks) response = await afterFn(req, response)
+        if (response.headers) res.set(response.headers)
+        if (response.statusCode > 200) return res.status(response.statusCode).send(response.message)
         if (query['fromOpLogId']) return await sendOpLog(req, res, next, parseInt(query['fromOpLogId']))
     } catch (e) {
         console.log('STARTUPDB Error', e)
@@ -828,11 +836,6 @@ const db = function (options: DBOptions) {
         if (req.method == 'GET' && rootRoute) {
             req.body = { command: 'list' }
             return await executeDBAcommand(req, res, next, req.startupDB.beforeGet, req.startupDB.afterGet)
-        }
-        const fileNameScanOrder = req.headers['accept'] == 'application/x-ndjson' ? ['latest.ndjson.gz', 'latest.ndjson'] : ['latest.json.gz', 'latest.json']
-        for (const fileName of fileNameScanOrder) {
-            if (options.serveRawCheckpoint && req.method == 'GET' && req.query.returnType == 'checkPoint' && (await rawCheckpointExists(req, res, next, collection, fileName)))
-                return getRawCheckpoint(req, res, next, collection, fileName)
         }
         if (req.method == 'GET') return await processMethod(req, res, next, collection, query, req.startupDB.beforeGet, dbGetObjects, req.startupDB.afterGet)
         if (req.method == 'HEAD') return await processMethod(req, res, next, collection, query, [], dbGetHeaders, [])
