@@ -457,8 +457,8 @@ describe('Behaviour: DELETE one document from /leesplank/origineel', function ()
 })
 
 describe('Behaviour: DELETE nonexisting document from /leesplank/origineel', function () {
-    it('should return 404', function (done) {
-        request(app).delete('/leesplank/origineel?id=Aap').set('Content-type', 'application/json').expect(404).end(done)
+    it('should return 200', function (done) {
+        request(app).delete('/leesplank/origineel?id=Aap').set('Content-type', 'application/json').expect(200).end(done)
     })
 })
 

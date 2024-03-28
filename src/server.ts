@@ -560,7 +560,7 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
     if (startupDB[collectionId]?.options?.storageType == 'array') return { statusCode: 409, message: { error: 'Cannot delete from an array collection', errorId: 'MPqDs0QgPc8g' } }
     let oldData = <ArrayOfDBDataObjects>[]
     if (id) {
-        if (!startupDB[collectionId].data[id]) return { statusCode: 404, message: { error: `Id (${id}) not found`, errorId: '8qMhWeKDj7Fg' } }
+        if (!startupDB[collectionId].data[id]) return { statusCode: 200 }
         oldData = [startupDB[collectionId].data[id]]
     } else if (filter) {
         try {
