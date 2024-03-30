@@ -1,71 +1,40 @@
-import { Req, DBConfig, DBCommandParameters } from './types'
+import { Req, DBCommandParameters, Database } from './types'
 import persist from './persistence'
 import tools from './tools'
-import debug from 'debug'
-const debugLogger = debug('startupdb')
 
-/**
- * Move all files in an oplog folder to it's accompanying archive folder
- */
-const moveOpLog = async function (collection: string, oldCheckPoint: number, newCheckPoint: number, db: DBConfig) {
-    for (let operation = oldCheckPoint; operation <= newCheckPoint; operation++) {
-        await persist.archive(`oplog/${collection}/${operation}.json`, db)
-    }
-}
-const flush = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, initStartupDB }) {
+const flush = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, initStartupDB }: { startupDB: Database; initStartupDB: Function }) {
     const collection = commandParameters.collection
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'tp5ut557FOBN' } }
-
-    const contentType = commandParameters.options?.contentType
     const force = commandParameters.options?.force
-    const fileType = contentType == 'ndjson' ? '.ndjson' : '.json'
-    const oplogFiles = await persist.readdir('./oplog/' + collection, req.startupDB)
-    if (oplogFiles.length == 0 && !force) return { response: 'OK' }
+    if (!persist.existsSync('./oplog/' + collection + '/latest.ndjson', req.startupDB) && !force) return { response: 'OK' }
     const dataFiles = req.startupDB.dataFiles
     const collectionId = dataFiles + '/' + collection
     if (!startupDB[collectionId]?.data) await initStartupDB(req.startupDB, collection)
-    const oldCheckPoint = startupDB[collectionId].checkPoint
-    const newCheckPoint = startupDB[collectionId].nextOpLogId - 1
-    if (oldCheckPoint > 0 && persist.existsSync('./checkpoint/' + collection + '/latest' + fileType, req.startupDB))
+    const archiveFileName = tools.yyyymmddhhmmss_ms(new Date()) + '.ndjson'
+    if (persist.existsSync(`./checkpoint/${collection}/latest.ndjson`, req.startupDB)) {
         try {
-            persist.rename('./checkpoint/' + collection + '/latest' + fileType, './checkpoint/' + collection + '/' + oldCheckPoint + fileType, req.startupDB)
+            persist.rename(`./checkpoint/${collection}/latest.ndjson`, `./checkpoint/${collection}/${archiveFileName}`, req.startupDB)
         } catch (err) {
             return { statusCode: 500, message: { error: 'Unable to rename checkpoint', errorId: '2aH6sQe0Ojkc' } }
         }
-
-    startupDB[collectionId].checkPoint = newCheckPoint
-    startupDB[collectionId].savedAt = new Date()
-    let bufferToPersist = ''
-    if (fileType == '.ndjson') {
-        const json = startupDB[collectionId]
-        const ndJsonHeader = {
-            options: json.options,
-            lastAccessed: json.lastAccessed,
-            lastModified: json.lastModified,
-            data: Array.isArray(json.data) ? [] : {},
-            checkPoint: json.checkPoint,
-            nextOpLogId: json.nextOpLogId,
-            savedAt: json.savedAt,
-            dbEngine: '2.0',
-        }
-        await persist.writeCheckpointToStream(ndJsonHeader, json.data, './checkpoint/' + collection, 'latest.ndjson', req.startupDB)
-    } else {
-        try {
-            const serialized = JSON.stringify(startupDB[collectionId])
-            bufferToPersist = serialized
-        } catch (err) {
-            debugLogger(err)
-            return { statusCode: 500, message: { error: 'Cannot serialize checkpoint, object too large?', errorId: 'RKdCqPkPyr7p' } }
-        }
-
-        try {
-            await persist.writeFile('./checkpoint/' + collection, 'latest.json', bufferToPersist, req.startupDB)
-        } catch (err) {
-            debugLogger(err)
-            return { statusCode: 500, message: { error: 'Cannot save checkpoint', errorId: 'Wms3x0goxHni' } }
-        }
     }
-    if (req.startupDB.options.opLogArchive != undefined) await moveOpLog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
+    startupDB[collectionId].savedAt = new Date().getTime()
+    const json = startupDB[collectionId]
+    const ndJsonHeader = {
+        options: json.options,
+        lastAccessed: json.lastAccessed,
+        lastModified: json.lastModified,
+        data: Array.isArray(json.data) ? [] : {},
+        savedAt: json.savedAt,
+        dbEngine: '2.5',
+    }
+    try {
+        persist.rename(`oplog/${collection}/latest.ndjson`, `oplog/${collection}/${archiveFileName}`, req.startupDB)
+    } catch (err) {
+        return { statusCode: 500, message: { error: 'Unable to rename oplog', errorId: 'aH6sQe0O2jkc' } }
+    }
+    await persist.writeCheckpointToStream(ndJsonHeader, json.data, './checkpoint/' + collection, 'latest.ndjson', req.startupDB)
+    if (req.startupDB.options.opLogArchive != undefined) await persist.archive(`oplog/${collection}/${archiveFileName}`, `oplog/${collection}/${archiveFileName}`, req.startupDB)
     return { response: 'OK' }
 }
 const create = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
@@ -74,7 +43,7 @@ const create = async function (req: Req, commandParameters: DBCommandParameters,
     const dataFiles = req.startupDB.dataFiles
     const collectionId = dataFiles + '/' + collection
     try {
-        if (persist.existsSync('./checkpoint/' + collection + '/latest.json', req.startupDB))
+        if (persist.existsSync('./checkpoint/' + collection + '/latest.ndjson', req.startupDB))
             return { statusCode: 409, message: { error: 'Collection already exists', errorId: 'CuQn5ZSSIN79' } }
     } catch (err) {
         console.log(err)
@@ -83,9 +52,18 @@ const create = async function (req: Req, commandParameters: DBCommandParameters,
     startupDB[collectionId].lastAccessed = new Date().getTime()
     if (commandParameters.options) startupDB[collectionId].options = commandParameters.options
     if (commandParameters.options?.storageType == 'array') startupDB[collectionId].data = []
-    const serialized = JSON.stringify(startupDB[collectionId])
-    let bufferToPersist = serialized
-    await persist.writeFile('./checkpoint/' + collection, 'latest.json', bufferToPersist, req.startupDB)
+    startupDB[collectionId].checkPoint = 0
+    startupDB[collectionId].savedAt = new Date()
+    const json = startupDB[collectionId]
+    const ndJsonHeader = {
+        options: json.options,
+        lastAccessed: json.lastAccessed,
+        lastModified: json.lastModified,
+        data: Array.isArray(json.data) ? [] : {},
+        savedAt: json.savedAt,
+        dbEngine: '3.0',
+    }
+    await persist.writeCheckpointToStream(ndJsonHeader, json.data, './checkpoint/' + collection, 'latest.ndjson', req.startupDB)
     return { response: 'OK' }
 }
 const ensureCollection = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
@@ -94,16 +72,11 @@ const ensureCollection = async function (req: Req, commandParameters: DBCommandP
     const dataFiles = req.startupDB.dataFiles
     const collectionId = dataFiles + '/' + collection
     try {
-        if (startupDB[collectionId] !== undefined || persist.existsSync('./checkpoint/' + collection + '/latest.json', req.startupDB)) return { response: 'OK' }
+        if (startupDB[collectionId] !== undefined || persist.existsSync('./checkpoint/' + collection + '/latest.ndjson', req.startupDB)) return { response: 'OK' }
     } catch (err) {
         console.log(err)
     }
-    startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
-    if (commandParameters.options) startupDB[collectionId].options = commandParameters.options
-    if (commandParameters.options?.storageType == 'array') startupDB[collectionId].data = []
-    const serialized = JSON.stringify(startupDB[collectionId])
-    let bufferToPersist = serialized
-    await persist.writeFile('./checkpoint/' + collection, 'latest.json', bufferToPersist, req.startupDB)
+    await create(req, commandParameters, { startupDB: startupDB })
     return { response: 'OK' }
 }
 const drop = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
@@ -189,8 +162,6 @@ const list = async function (req: Req, commandParameters: DBCommandParameters, {
             name: collectionName,
             inCache: true,
             count: startupDB[collectionName].data ? Object.keys(startupDB[collectionName].data)?.length : 0,
-            checkPoint: startupDB[collectionName].checkPoint,
-            lastOplogId: startupDB[collectionName].lastOplogId || 0,
         }
     })
     function addCollectionsFromFolder(folder) {
@@ -201,7 +172,7 @@ const list = async function (req: Req, commandParameters: DBCommandParameters, {
         const files = persist.readdirRecursive(dataFiles + '/' + folder).map((dir: string) => dir.replace('/' + folder, '').replace('\\' + folder, ''))
         const list = files.filter((file) => !listedCollectionIndex[file])
         list.forEach((file) => {
-            collectionsList.push({ name: file, inCache: false, count: 0, checkPoint: 0, lastOplogId: 0 })
+            collectionsList.push({ name: file, inCache: false, count: 0 })
         })
     }
     addCollectionsFromFolder('oplog')

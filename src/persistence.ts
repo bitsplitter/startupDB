@@ -1,35 +1,9 @@
 import { DBConfig } from './types'
+const { PassThrough } = require('stream')
 
 import fs from 'fs-extra'
 import path from 'path'
 const highWaterMark = 64 * 1024
-
-const writeFileSync = function (dirName: string, fileName: string, payload: string, db: DBConfig) {
-    db.options.secondaryDataDirs?.forEach((rootDir) => {
-        fs.ensureDirSync(path.join(rootDir, dirName))
-        fs.writeFileSync(path.join(rootDir, dirName, fileName), payload, 'utf8')
-    })
-    fs.ensureDirSync(path.join(db.dataFiles, dirName))
-    fs.writeFileSync(path.join(db.dataFiles, dirName, fileName), payload, 'utf8')
-}
-const writeFile = async function (dirName: string, fileName: string, payload: string, db: DBConfig) {
-    db.options.secondaryDataDirs?.forEach((rootDir) => {
-        fs.ensureDirSync(path.join(rootDir, dirName))
-        fs.writeFile(path.join(rootDir, dirName, fileName), payload, 'utf8')
-    })
-    fs.ensureDirSync(path.join(db.dataFiles, dirName))
-    return await fs.writeFile(path.join(db.dataFiles, dirName, fileName), payload, 'utf8')
-}
-const readFile = async function (dirName: string, fileName: string, db: DBConfig) {
-    return await fs.readFile(path.join(db.dataFiles, dirName, fileName))
-}
-const readdir = async function (dirName: string, db: DBConfig) {
-    try {
-        return await fs.readdir(path.join(db.dataFiles, dirName))
-    } catch (e) {
-        return []
-    }
-}
 
 function readdirRecursive(dirName: string) {
     const list: string[] = []
@@ -49,12 +23,18 @@ function readdirRecursive(dirName: string) {
     return list
 }
 const rename = function (newFile: string, oldFile: string, db: DBConfig) {
-    db.options.secondaryDataDirs?.forEach((rootDir) => {
-        fs.renameSync(path.join(rootDir, newFile), path.join(rootDir, oldFile))
-    })
-    return fs.renameSync(path.join(db.dataFiles, newFile), path.join(db.dataFiles, oldFile))
+    let x
+    try {
+        db.options.secondaryDataDirs?.forEach((rootDir) => {
+            fs.renameSync(path.join(rootDir, newFile), path.join(rootDir, oldFile))
+        })
+        x = fs.renameSync(path.join(db.dataFiles, newFile), path.join(db.dataFiles, oldFile))
+    } catch (e) {
+        console.log('@ERROR', e)
+    }
+    return x
 }
-const archive = async function (fileName: string, db: DBConfig) {
+const archive = async function (fileName: string, archiveFileName: string, db: DBConfig) {
     const archiveDir = db.options.opLogArchive!
     db.options.secondaryDataDirs?.forEach((rootDir) => {
         try {
@@ -64,8 +44,10 @@ const archive = async function (fileName: string, db: DBConfig) {
         }
     })
     try {
-        await fs.move(path.join(db.dataFiles, fileName), path.join(archiveDir, fileName), { overwrite: true })
+        fs.ensureFileSync(path.join(archiveDir, archiveFileName))
+        await fs.move(path.join(db.dataFiles, fileName), path.join(archiveDir, archiveFileName), { overwrite: true })
     } catch (e) {
+        console.log(e)
         // Don't panic
     }
     return
@@ -94,18 +76,6 @@ const fileStats = async function (fileName: string, db) {
         return { birthtimeMs: 0, size: 0 }
     }
 }
-/**
- * find the last file in an opLog folder.
- */
-const mostRecentFile = async function (dirName: string, db: DBConfig) {
-    const files = await readdir(dirName, db)
-    let max = -1
-    for (const file of files) {
-        const fileNr = parseInt(file)
-        if (fileNr > max) max = fileNr
-    }
-    return max
-}
 
 function drain(writer) {
     return new Promise((resolve) => writer.once('drain', resolve))
@@ -113,16 +83,31 @@ function drain(writer) {
 
 async function writeCheckpointToStream(metaData: any, json: any, dirName: string, fileName: string, db: DBConfig) {
     try {
+        db.options.secondaryDataDirs?.forEach((rootDir) => {
+            fs.ensureDirSync(path.join(rootDir, dirName))
+        })
         fs.ensureDirSync(path.join(db.dataFiles, dirName))
+        const passthroughStream = new PassThrough()
 
-        const writer = fs.createWriteStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, flags: 'a' })
-        if (!writer.write(JSON.stringify(metaData) + '\n')) await drain(writer)
+        const secondaryFileNames = db.options.secondaryDataDirs?.map((rootDir) => path.join(rootDir, dirName, fileName))
+        const writer = fs.createWriteStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, flags: 'w' })
+        const secondaryStreams = secondaryFileNames?.map((fileName) => fs.createWriteStream(fileName))
+        passthroughStream.pipe(writer)
+
+        secondaryStreams?.forEach((stream) => {
+            passthroughStream.pipe(stream)
+        })
+        if (!passthroughStream.write(JSON.stringify(metaData) + '\n')) await drain(passthroughStream)
         if (Array.isArray(json)) {
-            for (const obj of json) if (!writer.write(JSON.stringify(obj) + '\n')) await drain(writer)
+            for (const obj of json) if (!passthroughStream.write(JSON.stringify(obj) + '\n')) await drain(passthroughStream)
         } else {
-            for (const obj of Object.values(json)) if (!writer.write(JSON.stringify(obj) + '\n')) await drain(writer)
+            for (const obj of Object.values(json)) if (!passthroughStream.write(JSON.stringify(obj) + '\n')) await drain(passthroughStream)
         }
         writer.end()
+        passthroughStream.end()
+        secondaryStreams?.forEach((stream) => {
+            stream.end()
+        })
     } catch (err) {
         console.log(err)
     }
@@ -168,18 +153,62 @@ async function readCheckpointFromStream(dirName: string, fileName: string, db: D
         })
     })
 }
+const processOplog = async function (dirName: string, fileName: string, db: DBConfig, offset: number, func: (operation: any, length: number) => void): Promise<void> {
+    return new Promise((resolve, reject) => {
+        let buf = ''
+        let totalBytes = 0
+        let reader
+        try {
+            reader = fs.createReadStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, start: offset })
+        } catch (err) {
+            resolve()
+            return
+        }
+        reader.on('data', function (chunk) {
+            buf += chunk
+            totalBytes += chunk.length
+            do {
+                const newLinePos = buf.indexOf('\n')
+                if (newLinePos == -1) break
+                const line = buf.substring(0, newLinePos)
+                buf = buf.substring(newLinePos + 1)
+
+                if (!line) continue
+                try {
+                    const obj = JSON.parse(line)
+                    func(obj, line.length)
+                } catch {
+                    func({}, 0)
+                }
+            } while (true)
+        })
+        reader.on('end', function () {
+            resolve()
+        })
+        reader.on('error', (err) => {
+            if (err.code == 'ENOENT') resolve()
+            reject()
+        })
+    })
+}
+const appendFile = async function (dirName: string, fileName: string, payload: string, db: DBConfig) {
+    if (db.options.secondaryDataDirs)
+        for await (const rootDir of db.options.secondaryDataDirs) {
+            fs.ensureDirSync(path.join(rootDir, dirName))
+            await fs.appendFile(path.join(rootDir, dirName, fileName), payload, 'utf8')
+        }
+    fs.ensureDirSync(path.join(db.dataFiles, dirName))
+    return await fs.appendFile(path.join(db.dataFiles, dirName, fileName), payload, 'utf8')
+}
 export default {
     archive,
+    appendFile,
     existsSync,
     fileStats,
-    mostRecentFile,
-    readdir,
+    processOplog,
     readdirRecursive,
-    readFile,
     rename,
     rmdirSync,
-    writeFile,
-    writeFileSync,
     writeCheckpointToStream,
     readCheckpointFromStream,
 }

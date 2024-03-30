@@ -204,40 +204,18 @@ const applyCRUDoperation = function (operation: Operation, db: DBConfig, length:
     const collection = operation.collection
     const collectionId = db.dataFiles + '/' + collection
     const crudFunction = crud[crudOperation]
-
+    if (!crudFunction) return
     const response = crudFunction(operation, collectionId, db, length)
     startupDB[collectionId].lastModified = new Date().getTime()
     startupDB[collectionId].lastAccessed = startupDB[collectionId].lastModified
     return response
 }
-function getOplogIDsFromFileNames(files: Array<string>, checkPoint: number): Array<number> {
-    const opLogIds: Array<number> = []
-    for (const fileName of files) {
-        if (fileName.indexOf('.json') >= 0) {
-            const opLogId = parseInt(fileName.replace('.json', ''))
-            if (opLogId <= checkPoint) continue // Not relevant because they are already flushed
-            opLogIds.push(opLogId)
-        }
-    }
-    return opLogIds
-}
 //
-// Helper function to loop over all opLog files after a certain checkPoint and call a function on it's content
+// Helper function to loop over all operation in an opLog file after a certain offset and call a function on it's content
 //
-const processOplog = async function (collection: string, db: DBConfig, checkPoint: number, func: (operation: Operation, length: number) => void) {
+const processOplog = async function (collection: string, db: DBConfig, offset: number, func: (operation: Operation, length: number) => void) {
     const dataDirectory = './oplog/' + collection
-    const files = await persist.readdir(dataDirectory, db)
-    const opLogIds = getOplogIDsFromFileNames(files, checkPoint).sort(function (a: number, b: number) {
-        return a - b
-    }) // opLog must be processed in order.
-    for (const opLogId of opLogIds) {
-        try {
-            const operation = <string>(<unknown>await persist.readFile(dataDirectory, opLogId + '.json', db))
-            if (operation != '') func(JSON.parse(operation), operation.length)
-        } catch (err) {
-            // return debugLogger(logError(err))
-        }
-    }
+    await persist.processOplog(dataDirectory, 'latest.ndjson', db, offset, func)
 }
 /**
  * Initialize DB
@@ -262,18 +240,13 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     // We got the lock so we know we're the only one running this code now.
     // First check if the data we're after isn't already there (then someone else had the lock first and finished the work and we don't do anything)
     // Under high load, startupDB[collectionId] sometimes does not exist. startupDBGC might have kicked it out so we check here for !startupDB[collectionId]
-    if (!startupDB[collectionId] || startupDB[collectionId].nextOpLogId == 1) {
+    if (!startupDB[collectionId] || tools.isEmpty(startupDB[collectionId].data)) {
         debugLogger('Locked ' + collection)
         try {
             const ndJsononObject = await persist.readCheckpointFromStream(dataDirectory, 'latest.ndjson', db)
             if (ndJsononObject.savedAt) {
                 startupDB[collectionId] = ndJsononObject
                 startupDB[collectionId].length = ndJsononObject.totalBytes
-            } else {
-                const raw = <string>(<unknown>await persist.readFile(dataDirectory, 'latest.json', db))
-                // This contains a previously saved checkpoint
-                startupDB[collectionId] = JSON.parse(raw)
-                startupDB[collectionId].length = raw.length
             }
         } catch (err) {
             if (err.code == 'ENOENT') {
@@ -283,10 +256,8 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
         }
         startupDB[collectionId].lock = mutex
         startupDB[collectionId].lastAccessed = new Date().getTime()
-        checkPoint = startupDB[collectionId].checkPoint
         usedBytesInMemory += startupDB[collectionId].length
-        await processOplog(collection, db, checkPoint, function (operation: Operation, length: number) {
-            startupDB[collectionId].nextOpLogId = operation.opLogId + 1
+        await processOplog(collection, db, 0, function (operation: Operation, length: number) {
             applyCRUDoperation(operation, db, length)
         })
     } else {
@@ -298,7 +269,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
 
 const loadCollection = async function (db: DBConfig, collection: string): Promise<boolean> {
     const collectionId = db.dataFiles + '/' + collection
-    if (!startupDB[collectionId]?.data || startupDB[collectionId].nextOpLogId == 1) await initStartupDB(db, collection)
+    if (!startupDB[collectionId]?.data || tools.isEmpty(startupDB[collectionId].data)) await initStartupDB(db, collection)
     if (!startupDB[collectionId]?.data) return false
     startupDB[collectionId].lastAccessed = new Date().getTime()
     return true
@@ -308,12 +279,10 @@ const writeOperationToOpLog = async function (operation: Operation, db: DBConfig
     const dataFiles = db.dataFiles
     const collection = operation.collection
     const collectionId = dataFiles + '/' + collection
-    const oplogId = startupDB[collectionId].nextOpLogId++
     const date = new Date()
     const unixTimestamp = date.getTime()
     const timestamp = logDateFormat(date)
 
-    operation.opLogId = oplogId
     operation.timestamp = {
         unixTimeStamp: unixTimestamp,
         timeStamp: timestamp,
@@ -321,7 +290,9 @@ const writeOperationToOpLog = async function (operation: Operation, db: DBConfig
     const mutex: MutexInterface = startupDB[collectionId]?.lock
     const release = await mutex.acquire()
 
-    await persist.writeFile('./oplog/' + collection, oplogId + '.json', JSON.stringify(operation), db)
+    if (operation.operation == 'delete')
+        await persist.appendFile('./oplog/' + collection, 'latest.ndjson', JSON.stringify({ operation: operation.operation, oldData: operation.oldData }) + '\n', db)
+    else await persist.appendFile('./oplog/' + collection, 'latest.ndjson', JSON.stringify({ operation: operation.operation, data: operation.data }) + '\n', db)
     release()
 }
 
@@ -372,50 +343,27 @@ const executeDBAcommand = async function (req: Req, res: Res, next: NextFunction
  * This will allow a client to update it's remote copy of the database
  */
 const sendOpLog = async function (req: Req, res: Res, next: NextFunction, fromOpLogId: number) {
-    const collection = req.startupDB.collection
+    const db = req.startupDB
+    const collection = db.collection
     if (isNaN(fromOpLogId)) return res.sendStatus(400)
 
-    const opLog: Array<any> = []
-    // When a client has old data and requests an opLogId that has been deleted (due to flush), we respond with a 404 signalling the client to reload
-    let tooOld = true
-    let prevId = -1 // Used to detect a gap in the oplog (because of a pending operation). Only send the contigues opLog
-    await processOplog(collection, req.startupDB, fromOpLogId, function (operation: Operation) {
-        if (operation.opLogId == fromOpLogId + 1) tooOld = false
-        if (prevId != -1 && operation.opLogId > prevId + 1) return // a gap, don't send the rest
-        prevId = operation.opLogId
-        if (operation.operation == 'patch' || operation.operation == 'update') {
-            opLog.push({ operation: operation.operation, collection: operation.collection, data: operation.data, opLogId: operation.opLogId, timestamp: operation.timestamp })
-        }
-        if (operation.operation == 'create' || operation.operation == 'delete') {
-            opLog.push(operation)
-        }
-    })
-    if (tooOld && opLog.length > 0) return res.sendStatus(404)
-    return res.send(opLog)
-}
-const getHeaders = function (collectionId: string) {
-    return {
-        'x-last-checkpoint-time': startupDB[collectionId].savedAt || 0,
-        'x-last-oplog-id': startupDB[collectionId].nextOpLogId - 1,
-    }
+    const fsOpLogStats = await persist.fileStats(`./oplog/${collection}/latest.ndjson`, db)
+    res.set('Content-Type', 'application/x-ndjson; charset=utf-8')
+    if (fsOpLogStats.size == 0) return res.sendStatus(200)
+
+    res.set('Content-Length', '' + (fsOpLogStats.size - fromOpLogId))
+    fs.createReadStream(path.join(`${db.dataFiles}/oplog`, collection, 'latest.ndjson'), { start: fromOpLogId, end: fsOpLogStats.size - 1 }).pipe(res)
 }
 const getOfflineHeaders = async function (collectionId: string, db: DBConfig) {
-    const ndJsonFileName = './checkpoint/' + collectionId + '/latest.ndjson'
+    const ndJsonCheckpointFileName = './checkpoint/' + collectionId + '/latest.ndjson'
     const oplogFolder = './oplog/' + collectionId
-    if (persist.existsSync(ndJsonFileName, db) || persist.existsSync(ndJsonFileName + '.gz', db)) {
-        const fsStats = await persist.fileStats(ndJsonFileName, db)
-        return {
-            'x-last-checkpoint-time': fsStats.birthtimeMs,
-            'x-last-oplog-id': (await persist.mostRecentFile(oplogFolder, db)) || -1,
-            'Content-Type': 'application/x-ndjson',
-        }
-    }
-    const fileName = './checkpoint/' + collectionId + '/latest.json'
-
+    const ndJsonOpLogFileName = oplogFolder + '/latest.ndjson'
+    const fsCheckpointStats = await persist.fileStats(ndJsonCheckpointFileName, db)
+    const fsOplogStats = await persist.fileStats(ndJsonOpLogFileName, db)
     return {
-        'x-last-checkpoint-time': (await persist.fileStats(fileName, db)).birthtimeMs,
-        'x-last-oplog-id': (await persist.mostRecentFile(oplogFolder, db)) || -1,
-        'Content-Type': 'application/json',
+        'x-last-checkpoint-time': fsCheckpointStats.birthtimeMs,
+        'x-last-oplog-id': fsOplogStats.size,
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
     }
 }
 /**
@@ -449,7 +397,7 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
     const offset = parseInt(query['offset']) || 0
     if (!(await loadCollection(db, collection))) return { statusCode: 500, message: { error: 'Cannot load resource', errorId: '7d91kl3nw5z0' } }
 
-    const headers = getHeaders(collectionId)
+    const headers = dbGetHeaders(db, collectionId)
     if (id) {
         if (!startupDB[collectionId].data[id]) return { statusCode: 404, message: { error: `Id (${id}) not found`, errorId: '7qMhSaYDj7Vg' } }
         if (returnType == 'checkpoint') {
@@ -463,8 +411,6 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
                     lastAccessed: json.lastAccessed,
                     lastModified: json.lastModified,
                     data: theOneObject,
-                    checkPoint: json.checkPoint,
-                    nextOpLogId: json.nextOpLogId,
                     savedAt: json.savedAt,
                     length: json.length,
                 },
@@ -493,8 +439,6 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
                     lastAccessed: json.lastAccessed,
                     lastModified: json.lastModified,
                     data: filteredObject,
-                    checkPoint: json.checkPoint,
-                    nextOpLogId: json.nextOpLogId,
                     savedAt: json.savedAt,
                     length: json.length,
                 },
@@ -561,7 +505,7 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
     let oldData = <ArrayOfDBDataObjects>[]
     if (id) {
         if (!startupDB[collectionId].data[id]) return { statusCode: 200 }
-        oldData = [startupDB[collectionId].data[id]]
+        oldData = [{ id: id }]
     } else if (filter) {
         try {
             myFilter = compileExpression(filter, filtrexOptions)
@@ -569,7 +513,7 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
             return { statusCode: 400, message: { error: '<p style="font-family:\'Courier New\'">' + err.message.replace(/\n/g, '<br>') + '</p>', errorId: 'is9IBEetHorq' } }
         }
         const filteredIds = Object.keys(startupDB[collectionId].data).filter((id) => myFilter(startupDB[collectionId].data[id]))
-        oldData = filteredIds.map((id) => startupDB[collectionId].data[id])
+        oldData = filteredIds.map((id) => ({ id: id }))
     } else {
         return { statusCode: 400, message: { error: 'No id or filter specified', errorId: 'lMeRiqyICPbU' } }
     }
@@ -577,8 +521,8 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
         operation: 'delete',
         collection: collection,
         oldData: oldData,
-        opLogId: 0,
         data: [],
+        opLogId: 0,
         timestamp: {
             unixTimeStamp: 0,
             timeStamp: '',
@@ -606,7 +550,6 @@ const dbUpdateObjects = async function (db: DBConfig, collection: string, payloa
     if (startupDB[collectionId]?.options?.storageType == 'array') return { statusCode: 409, message: { error: 'Cannot update an array collection', errorId: 'S7lC7Y1ffWp8' } }
     addIdsToItemsThatHaveNone(payload)
 
-    const oldData = getObjectsForIdsInPayload(payload, startupDB[collectionId].data)
     if (typeof db.options.addTimeStamps == 'function') {
         const addTimeStamps = db.options.addTimeStamps
         for (const item of payload)
@@ -620,7 +563,6 @@ const dbUpdateObjects = async function (db: DBConfig, collection: string, payloa
     const operation = {
         operation: 'update',
         collection: collection,
-        oldData: oldData,
         data: payload,
         opLogId: 0,
         timestamp: {
@@ -652,11 +594,9 @@ const dbPatchObjects = async function (db: DBConfig, collection: string, payload
         return { statusCode: 409, message: { error: 'Cannot apply patch to an array collection', errorId: 'ZCssBbz1nevT' } }
     addIdsToItemsThatHaveNone(payload)
 
-    const oldData = getObjectsForIdsInPayload(payload, startupDB[collectionId].data)
     const operation = {
         operation: 'patch',
         collection: collection,
-        oldData: oldData,
         data: payload,
         opLogId: 0,
         timestamp: {
@@ -725,6 +665,7 @@ const dbCreateObjects = async function (db: DBConfig, collection: string, payloa
 const processMethod = async function (req: Req, res: Res, next: NextFunction, collection: string, query: any, preHooks: Function[], method: Function, postHooks: Function[]) {
     let response = { statusCode: 0, data: {}, message: '', headers: {} }
     try {
+        debugger
         for (const beforeFn of preHooks) {
             response = await beforeFn(req, res, next, req.startupDB.collection)
             if (response?.statusCode >= 300) return res.status(response.statusCode).send(response.data)
@@ -733,7 +674,7 @@ const processMethod = async function (req: Req, res: Res, next: NextFunction, co
         if (response?.statusCode == 0) {
             if (req.method == 'GET' && query['fromOpLogId']) return await sendOpLog(req, res, next, parseInt(query['fromOpLogId']))
             if (req.method == 'GET' && query.returnType == 'checkPoint') {
-                const fileNameScanOrder = req.headers['accept'] == 'application/x-ndjson' ? ['latest.ndjson.gz', 'latest.ndjson'] : ['latest.json.gz', 'latest.json']
+                const fileNameScanOrder = ['latest.ndjson.gz', 'latest.ndjson']
                 for (const fileName of fileNameScanOrder) {
                     if (req.startupDB.options.serveRawCheckpoint && (await rawCheckpointExists(req, res, next, collection, fileName)))
                         return getRawCheckpoint(req, res, next, collection, fileName)
@@ -744,7 +685,9 @@ const processMethod = async function (req: Req, res: Res, next: NextFunction, co
         for (const afterFn of postHooks) response = await afterFn(req, response)
         if (response.headers) res.set(response.headers)
         if (response.statusCode > 200) return res.status(response.statusCode).send(response.message)
-        if (query['fromOpLogId']) return await sendOpLog(req, res, next, parseInt(query['fromOpLogId']))
+        if (query['fromOpLogId']) {
+            return await sendOpLog(req, res, next, parseInt(query['fromOpLogId']))
+        }
     } catch (e) {
         console.log('STARTUPDB Error', e)
         if (typeof req.startupDB.options.sentry?.captureException == 'function') req.startupDB.options.sentry.captureException(e)
