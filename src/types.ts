@@ -60,15 +60,12 @@ export interface Collection {
     lastModified: number
     data: CollectionOfObjects
     lock: MutexInterface
-    checkPoint: number
-    nextOpLogId: number
     savedAt: number
     length: number
 }
 
 export interface Operation {
     operation: string
-    opLogId: number
     collection: string
     data: Array<DBDataObject>
     oldData?: Array<DBDataObject>
