@@ -5,7 +5,6 @@ function deepCopy<Type>(obj: Type): Type {
 }
 const EMPTY_COLLECTION = {
     checkPoint: 0,
-    nextOpLogId: 1,
     savedAt: 0,
     lock: <MutexInterface>{},
     data: {},
@@ -22,8 +21,35 @@ function ensureArray(object: any): Array<any> {
     return object
 }
 
+function isEmpty(item: object | []): boolean {
+    if (Array.isArray(item)) return item.length == 0
+    for (let key in item) {
+        if (item.hasOwnProperty(key)) {
+            return false
+        }
+    }
+    return true
+}
+
+function yyyymmddhhmmss_ms(date): string {
+    function pad2(n) {
+        return (n < 10 ? '0' : '') + n
+    }
+    return (
+        date.getFullYear() +
+        pad2(date.getMonth() + 1) +
+        pad2(date.getDate()) +
+        pad2(date.getHours()) +
+        pad2(date.getMinutes()) +
+        pad2(date.getSeconds()) +
+        '_' +
+        date.getMilliseconds()
+    )
+}
 export default {
     deepCopy,
     EMPTY_COLLECTION,
     ensureArray,
+    isEmpty,
+    yyyymmddhhmmss_ms,
 }
