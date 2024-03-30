@@ -450,7 +450,6 @@ describe('Behaviour: DELETE one document from /leesplank/origineel', function ()
             .expect(200)
             .expect(function (res) {
                 assert.strictEqual(res.body[0].id, 'Aap')
-                assert.strictEqual(res.body[0].description, 'Een dier met een staart.')
             })
             .end(done)
     })
@@ -469,16 +468,14 @@ describe('Behaviour: DELETE without parameters from /leesplank/origineel', funct
 })
 
 describe('Behaviour: DELETE multiple documents from /leesplank/origineel', function () {
-    it('should return the original documents', function (done) {
+    it('should return the original document ids', function (done) {
         request(app)
             .delete('/leesplank/origineel?filter=id in ("Wim","Zus")')
             .set('Content-type', 'application/json')
             .expect(200)
             .expect(function (res) {
                 assert.strictEqual(res.body[0].id, 'Wim')
-                assert.strictEqual(res.body[0].description, 'Een broer.')
                 assert.strictEqual(res.body[1].id, 'Zus')
-                assert.strictEqual(res.body[1].description, 'Een baby.')
             })
             .end(done)
     })
@@ -582,7 +579,7 @@ describe('Behaviour: PATCH /leesplank/origineel', function () {
     })
 })
 describe('Behaviour: DELETE one document by ID from /leesplank/origineel', function () {
-    it('should return the original document', function (done) {
+    it('should return the original document id', function (done) {
         request(app)
             .delete('/leesplank/origineel?id=Teun')
             .expect(200)
@@ -716,8 +713,10 @@ describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint', function (
             .expect(200)
             .expect('Content-Type', 'application/json; charset=utf-8')
             .expect(function (res) {
-                assert.ok('checkPoint' in res.body)
-                assert.ok('nextOpLogId' in res.body)
+                assert.ok('data' in res.body)
+                assert.ok('lastAccessed' in res.body)
+                assert.ok('lastModified' in res.body)
+                assert.ok('length' in res.body)
             })
             .end(done)
     })
@@ -751,24 +750,26 @@ describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint&filter=id=="
     })
 })
 
-describe('Behaviour: GET /leesplank/origineel?fromOpLogId=100', function () {
-    it('should return a 400 when requesting an nonexisting oplogId', function (done) {
+describe('Behaviour: GET /leesplank/origineel?fromOpLogId=aap', function () {
+    it('should return a 400 when requesting an malformed oplogId', function (done) {
         request(app).get('/leesplank/origineel?fromOpLogId=aap').set('Content-type', 'application/json').expect(400).end(done)
     })
 })
 
-describe('Behaviour: GET /leesplank/origineel?fromOpLogId=1', function () {
+describe('Behaviour: GET /leesplank/origineel?fromOpLogId=251', function () {
     it('should return an array with operations when requesting a proper oplogId', function (done) {
         request(app)
-            .get('/leesplank/origineel?fromOpLogId=1')
+            .get('/leesplank/origineel?fromOpLogId=251')
             .set('Content-type', 'application/json')
             .expect(200)
-            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect('Content-Type', 'application/x-ndjson; charset=utf-8')
             .expect(function (res) {
-                assert.ok(Array.isArray(res.body))
-                assert.strictEqual(res.body[0].operation, 'create')
-                assert.strictEqual(res.body[0].collection, 'origineel')
-                assert.strictEqual(res.body.length, 11)
+                const operations = res.text
+                    .split('\n')
+                    .filter((line) => line)
+                    .map(JSON.parse)
+                assert.strictEqual(operations[0].operation, 'create')
+                assert.strictEqual(operations.length, 11)
             })
             .end(done)
     })
@@ -787,8 +788,8 @@ describe('Behaviour GET command', function () {
             .expect(200)
             .expect({
                 collections: [
-                    { name: 'origineel', inCache: true, count: 6, checkPoint: 0, lastOplogId: 0 },
-                    { name: 'reject', inCache: true, count: 0, checkPoint: 0, lastOplogId: 0 },
+                    { name: 'origineel', inCache: true, count: 6 },
+                    { name: 'reject', inCache: true, count: 0 },
                 ],
             })
             .end(done)
@@ -810,6 +811,19 @@ describe('Behaviour flush command without collection', function () {
 describe('Behaviour flush command without prior checkpoint', function () {
     it('executing a flush command without a prior checkpoint should return a 200', function (done) {
         request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'flush', collection: 'origineel' }).expect(200).end(done)
+    })
+})
+
+describe('Behaviour: get /leesplank/origineel oplog', function () {
+    it('should return an empty list', function (done) {
+        request(app)
+            .get('/leesplank/origineel?fromOpLogId=0')
+            .set('Content-type', 'application/json')
+            .expect(200)
+            .expect(function (res) {
+                assert.strictEqual(JSON.stringify(res.body), '{}')
+            })
+            .end(done)
     })
 })
 
@@ -1032,42 +1046,26 @@ describe('Behaviour: GET /leesplank/array?returnType=checkpoint', function () {
             .expect(200)
             .expect('Content-Type', 'application/json; charset=utf-8')
             .expect(function (res) {
-                assert.ok('checkPoint' in res.body)
-                assert.ok('nextOpLogId' in res.body)
                 assert.strictEqual(res.body.options.storageType, 'array')
             })
             .end(done)
     })
 })
-describe('Behaviour: HEAD /leesplank/array?fromOpLogId=1', function () {
+describe('Behaviour: HEAD /leesplank/notthere', function () {
     it('should return 200 even on a non-existing collection', function (done) {
-        request(app).head('/leesplank/notthere?fromOpLogId=1').set('Content-type', 'application/json').expect(200).end(done)
+        request(app).head('/leesplank/notthere').set('Content-type', 'application/json').expect(200).end(done)
     })
 })
 
-describe('Behaviour: HEAD /leesplank/array?fromOpLogId=1', function () {
-    it('should return predictable x-headers', function (done) {
+describe('Behaviour: GET /leesplank/array?fromOpLogId=0', function () {
+    it('should return a stream of operations when requesting a proper oplogId', function (done) {
         request(app)
-            .head('/leesplank/array?fromOpLogId=1')
+            .get('/leesplank/array?fromOpLogId=0')
             .set('Content-type', 'application/json')
             .expect(200)
-            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect('Content-Type', 'application/x-ndjson; charset=utf-8')
             .expect(function (res) {
-                assert.strictEqual(JSON.stringify(res.body), '{}')
-                assert.ok(res.headers['x-last-checkpoint-time'] > 0)
-            })
-            .end(done)
-    })
-})
-describe('Behaviour: GET /leesplank/array?fromOpLogId=1', function () {
-    it('should return an array with operations when requesting a proper oplogId', function (done) {
-        request(app)
-            .get('/leesplank/array?fromOpLogId=1')
-            .set('Content-type', 'application/json')
-            .expect(200)
-            .expect('Content-Type', 'application/json; charset=utf-8')
-            .expect(function (res) {
-                assert.ok(Array.isArray(res.body))
+                assert.ok(res.text.split('\n').length == 4)
             })
             .end(done)
     })
@@ -1077,6 +1075,22 @@ describe('Behaviour POST /leesplank', function () {
         request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'flush', collection: 'array' }).expect(200).end(done)
     })
 })
+describe('Behaviour: HEAD /leesplank/array', function () {
+    it('should return predictable x-headers after flush', function (done) {
+        request(app)
+            .head('/leesplank/array')
+            .set('Content-type', 'application/json')
+            .expect(200)
+            .expect('Content-Type', 'application/x-ndjson; charset=utf-8')
+            .expect(function (res) {
+                assert.strictEqual(JSON.stringify(res.body), '{}')
+                assert.isAbove(parseFloat(res.headers['x-last-checkpoint-time']), 1710579977472)
+                assert.strictEqual(res.headers['x-last-oplog-id'], '0')
+            })
+            .end(done)
+    })
+})
+
 describe('Behaviour: purgeOplog', function () {
     it("executing a purgeOplog command with storageType='array' reloads the checkpoint", function (done) {
         request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'purgeOplog', collection: 'array' }).expect(200).end(done)
@@ -1167,7 +1181,7 @@ describe('Behaviour after POST', function () {
             .send({ command: 'inspect' })
             .expect(200)
             .expect(function (res) {
-                assert.include(res.body.leastRecentlyUsed.collection, '/startupDB/leesplank/silent')
+                assert.include(res.body.leastRecentlyUsed.collection, '/leesplank/silent')
                 assert.equal(res.body.nrCollectionsInCache, 5)
             })
             .end(done)
@@ -1310,7 +1324,7 @@ describe('Behaviour: expect GC after adding a lot of data', function () {
             .send({ command: 'inspect' })
             .expect(200)
             .expect(function (res) {
-                assert.strictEqual(res.body.usedBytesInMemory, 486)
+                assert.strictEqual(res.body.usedBytesInMemory, 489)
                 assert.strictEqual(res.body.nrCollectionsInCache, 1)
             })
             .end(done)

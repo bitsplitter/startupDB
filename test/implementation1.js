@@ -31,9 +31,9 @@ describe('Implementation GET command', function () {
             .expect(200)
             .expect({
                 collections: [
-                    { name: 'nieuw', inCache: false, count: 0, checkPoint: 0, lastOplogId: 0 },
-                    { name: 'parent/child', inCache: false, count: 0, checkPoint: 0, lastOplogId: 0 },
-                    { name: 'origineel', inCache: false, count: 0, checkPoint: 0, lastOplogId: 0 },
+                    { name: 'nieuw', inCache: false, count: 0 },
+                    { name: 'parent/child', inCache: false, count: 0 },
+                    { name: 'origineel', inCache: false, count: 0 },
                 ],
             })
             .end(done)
