@@ -774,6 +774,7 @@ const setupStartupDB = function (): DBConfig {
         deleteObjects: noop,
         patchObjects: noop,
         executeDBAcommand: noop,
+        pullOplog: noop,
     }
 }
 /**
@@ -828,6 +829,17 @@ const db = function (options: DBOptions) {
         }
         req.startupDB.executeDBAcommand = async function (payload: ArrayOfDBDataObjects) {
             return dbExecuteDBAcommand(req, payload, { usedBytesInMemory, startupDB, initStartupDB, startupDBGC })
+        }
+        req.startupDB.pullOplog = async function (collection: string, query) {
+            const db = req.startupDB
+            const dataFiles = db.dataFiles
+            const collectionId = dataFiles + '/' + collection
+            if (!startupDB[collectionId]) return
+            const checkPoint = startupDB[collectionId].checkPoint
+            await processOplog(collection, db, checkPoint, function (operation: Operation, length: number) {
+                startupDB[collectionId].nextOpLogId = operation.opLogId + 1
+                applyCRUDoperation(operation, db, length)
+            })
         }
 
         const collection = req.startupDB.collection
