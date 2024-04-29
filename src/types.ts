@@ -45,6 +45,7 @@ export type DBConfig = {
     deleteObjects: Function
     patchObjects: Function
     executeDBAcommand: Function
+    pullOplog: Function
     contentLength: number
 }
 export interface DBDataObject {
