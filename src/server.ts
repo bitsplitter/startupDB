@@ -755,18 +755,22 @@ const db = function (options: DBOptions) {
 
         // Define 'internal' CRUD functions that can be called from hooks functions
         req.startupDB.createObjects = async function (collection: string, payload: ArrayOfDBDataObjects) {
+            if (options.readOnly) return res.sendStatus(403)
             return dbCreateObjects(req.startupDB, collection, tools.ensureArray(payload))
         }
         req.startupDB.getObjects = async function (collection: string, query) {
             return dbGetObjects(req.startupDB, collection, [], query)
         }
         req.startupDB.updateObjects = async function (collection: string, payload: ArrayOfDBDataObjects) {
+            if (options.readOnly) return res.sendStatus(403)
             return dbUpdateObjects(req.startupDB, collection, tools.ensureArray(payload))
         }
         req.startupDB.deleteObjects = async function (collection: string, payload: ArrayOfDBDataObjects) {
+            if (options.readOnly) return res.sendStatus(403)
             return dbDeleteObjects(req.startupDB, collection, tools.ensureArray(payload))
         }
         req.startupDB.patchObjects = async function (collection: string, payload: ArrayOfDBDataObjects) {
+            if (options.readOnly) return res.sendStatus(403)
             return dbPatchObjects(req.startupDB, collection, tools.ensureArray(payload))
         }
         req.startupDB.executeDBAcommand = async function (payload: ArrayOfDBDataObjects) {
