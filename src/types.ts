@@ -63,6 +63,7 @@ export interface Collection {
     lock: MutexInterface
     savedAt: number
     length: number
+    opLogSize: number
 }
 
 export interface Operation {

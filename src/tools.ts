@@ -12,6 +12,7 @@ const EMPTY_COLLECTION = {
     lastAccessed: 0,
     lastModified: 0,
     length: 0,
+    opLogSize: 0,
 }
 /*
  * Ensure that an object is an array. If so, return object, else return a one-element array with the object

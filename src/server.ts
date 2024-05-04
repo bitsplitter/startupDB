@@ -216,6 +216,8 @@ const applyCRUDoperation = function (operation: Operation, db: DBConfig, length:
 const processOplog = async function (collection: string, db: DBConfig, offset: number, func: (operation: Operation, length: number) => void) {
     const dataDirectory = './oplog/' + collection
     await persist.processOplog(dataDirectory, 'latest.ndjson', db, offset, func)
+    const fsOpLogStats = await persist.fileStats(`./oplog/${collection}/latest.ndjson`, db)
+    startupDB[db.dataFiles + '/' + collection].opLogSize = fsOpLogStats.size
 }
 /**
  * Initialize DB
@@ -778,11 +780,12 @@ const db = function (options: DBOptions) {
             return dbExecuteDBAcommand(req, payload, { usedBytesInMemory, startupDB, initStartupDB, startupDBGC })
         }
         req.startupDB.pullOplog = async function (collection: string, query) {
+            if (!options.readOnly) return res.sendStatus(403) // pullOplog is for stateless secondary servers, not intended for use on statefull main server.
             const db = req.startupDB
             const dataFiles = db.dataFiles
             const collectionId = dataFiles + '/' + collection
             if (!startupDB[collectionId]) return
-            await processOplog(collection, db, 0, function (operation: Operation, length: number) {
+            await processOplog(collection, db, startupDB[collectionId].opLogSize, function (operation: Operation, length: number) {
                 applyCRUDoperation(operation, db, length)
             })
         }
