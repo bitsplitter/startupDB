@@ -156,7 +156,6 @@ async function readCheckpointFromStream(dirName: string, fileName: string, db: D
 const processOplog = async function (dirName: string, fileName: string, db: DBConfig, offset: number, func: (operation: any, length: number) => void): Promise<void> {
     return new Promise((resolve, reject) => {
         let buf = ''
-        let totalBytes = 0
         let reader
         try {
             reader = fs.createReadStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, start: offset })
@@ -166,7 +165,6 @@ const processOplog = async function (dirName: string, fileName: string, db: DBCo
         }
         reader.on('data', function (chunk) {
             buf += chunk
-            totalBytes += chunk.length
             do {
                 const newLinePos = buf.indexOf('\n')
                 if (newLinePos == -1) break
