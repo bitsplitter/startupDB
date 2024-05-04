@@ -835,6 +835,7 @@ const db = function (options: DBOptions) {
             return dbExecuteDBAcommand(req, payload, { usedBytesInMemory, startupDB, initStartupDB, startupDBGC })
         }
         req.startupDB.pullOplog = async function (collection: string, query) {
+            if (!options.readOnly) return res.sendStatus(403) // pullOplog is for stateless secondary servers, not intended for use on statefull main server.
             const db = req.startupDB
             const dataFiles = db.dataFiles
             const collectionId = dataFiles + '/' + collection
