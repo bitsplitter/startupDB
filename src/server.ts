@@ -181,7 +181,7 @@ crud.patch = function (operation: Operation, collectionId: string, db: DBConfig,
             return { statusCode: 400, message: { error: 'Invalid patch', errorId: 'SYtSsvvMlKiE' } }
         }
         const addTimeStamps = db.options.addTimeStamps
-        if (typeof addTimeStamps == 'function') addTimeStamps('modified_patch', item)
+        if (typeof addTimeStamps == 'function') addTimeStamps('modified_patch', patchedDocument, item)
         if (typeof db.options.validator == 'function') {
             const errors = validateDocuments(db.options.validator, operation.collection, patchedDocument)
             if (errors.statusCode > 0) return errors
