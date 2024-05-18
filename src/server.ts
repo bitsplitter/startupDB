@@ -176,14 +176,13 @@ crud.patch = function (operation: Operation, collectionId: string, db: DBConfig,
         const document = <DBDataObject>tools.deepCopy(startupDB[collectionId].data[item.id] || {})
         let patchedDocument = document
         try {
+            if (typeof addTimeStamps == 'function') addTimeStamps('modified_patch', patchedDocument, document, item)
             if (item.patch) {
-                if (typeof addTimeStamps == 'function') addTimeStamps('modified_patch', patchedDocument, document, item)
                 jsonPatch.applyPatch(document, item.patch).newDocument
             } else patchedDocument = Object.assign(patchedDocument, item)
         } catch (err) {
             return { statusCode: 400, message: { error: 'Invalid patch', errorId: 'SYtSsvvMlKiE' } }
         }
-        if (!item.patch && typeof addTimeStamps == 'function') addTimeStamps('modified', patchedDocument, document)
         if (typeof db.options.validator == 'function') {
             const errors = validateDocuments(db.options.validator, operation.collection, patchedDocument)
             if (errors.statusCode > 0) return errors
