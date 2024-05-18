@@ -177,7 +177,7 @@ crud.patch = function (operation: Operation, collectionId: string, db: DBConfig,
         let patchedDocument = document
         try {
             if (item.patch) {
-                if (typeof addTimeStamps == 'function') addTimeStamps('modified_patch', patchedDocument, item)
+                if (typeof addTimeStamps == 'function') addTimeStamps('modified_patch', patchedDocument, document, item)
                 jsonPatch.applyPatch(document, item.patch).newDocument
             } else patchedDocument = Object.assign(patchedDocument, item)
         } catch (err) {
