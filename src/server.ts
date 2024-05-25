@@ -696,7 +696,7 @@ const processMethod = async function (req: Req, res: Res, next: NextFunction, co
                 for (const fileName of fileNameScanOrder) {
                     if (await rawCheckpointExists(req, res, next, collection, fileName)) return getRawCheckpoint(req, res, next, collection, fileName)
                 }
-                return res.status(200).send({ lastAccessed: 0, lastModified: 0, checkPoint: 0, nextOpLogId: -1, data: {}, savedAt: 0, length: 0 })
+                return res.status(200).send({ lastAccessed: 0, lastModified: 0, checkPoint: 0, nextOpLogId: 1, data: {}, savedAt: 0, length: 0 })
             }
             response = await method(req.startupDB, collection, req.body, query)
         }
