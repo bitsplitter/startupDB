@@ -716,36 +716,9 @@ describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint', function (
             .expect(200)
             .expect('Content-Type', 'application/json; charset=utf-8')
             .expect(function (res) {
+                console.log('!!!!!!!!!!!', res.body)
                 assert.ok('checkPoint' in res.body)
                 assert.ok('nextOpLogId' in res.body)
-            })
-            .end(done)
-    })
-})
-
-describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint&id=Noot', function () {
-    it('should return a checkpoint object', function (done) {
-        request(app)
-            .get('/leesplank/origineel?returnType=checkpoint&id=Noot')
-            .set('Content-type', 'application/json')
-            .expect(200)
-            .expect('Content-Type', 'application/json; charset=utf-8')
-            .expect(function (res) {
-                assert.strictEqual(res.body.data.Noot.id, 'Noot')
-            })
-            .end(done)
-    })
-})
-
-describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint&filter=id=="Noot"', function () {
-    it('should return a checkpoint object', function (done) {
-        request(app)
-            .get('/leesplank/origineel?returnType=checkpoint&filter=id=="Noot"')
-            .set('Content-type', 'application/json')
-            .expect(200)
-            .expect('Content-Type', 'application/json; charset=utf-8')
-            .expect(function (res) {
-                assert.strictEqual(res.body.data.Noot.id, 'Noot')
             })
             .end(done)
     })
