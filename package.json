@@ -5,7 +5,7 @@
     "main": "dist/server.js",
     "repository": {
         "type": "git",
-        "url": "https://github.com/bitsplitter/startupDB.git"
+        "url": "git+https://github.com/bitsplitter/startupDB.git"
     },
     "scripts": {
         "test-behaviour": "mocha ./test/behaviour0.js && mocha ./test/behaviour1.js ",
