@@ -403,23 +403,6 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
     const headers = dbGetHeaders(db, collectionId)
     if (id) {
         if (!startupDB[collectionId].data[id]) return { statusCode: 404, message: { error: `Id (${id}) not found`, errorId: '7qMhSaYDj7Vg' } }
-        if (returnType == 'checkpoint') {
-            const theOneObject = {}
-            theOneObject[id] = startupDB[collectionId].data[id]
-            const json = startupDB[collectionId]
-            return {
-                statusCode: 200,
-                data: {
-                    options: json.options,
-                    lastAccessed: json.lastAccessed,
-                    lastModified: json.lastModified,
-                    data: theOneObject,
-                    savedAt: json.savedAt,
-                    length: json.length,
-                },
-                headers: headers,
-            }
-        }
         return { statusCode: 200, data: startupDB[collectionId].data[id] }
     } else if (filter) {
         try {
@@ -429,25 +412,6 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
         }
         const filteredIds = Object.keys(startupDB[collectionId].data).filter((id) => myFilter(startupDB[collectionId].data[id]))
         const filteredArray = filteredIds.map((id) => startupDB[collectionId].data[id])
-        if (returnType == 'checkpoint') {
-            const filteredObject = filteredArray.reduce((acc, item) => {
-                acc[item.id] = item
-                return acc
-            }, {})
-            const json = startupDB[collectionId]
-            return {
-                statusCode: 200,
-                data: {
-                    options: json.options,
-                    lastAccessed: json.lastAccessed,
-                    lastModified: json.lastModified,
-                    data: filteredObject,
-                    savedAt: json.savedAt,
-                    length: json.length,
-                },
-                headers: headers,
-            }
-        }
         if (limit) return { statusCode: 200, data: filteredArray.slice(offset, offset + limit) }
         else return { statusCode: 200, data: filteredArray }
     } else {
@@ -457,8 +421,6 @@ const dbGetObjects = async function (db: DBConfig, collection: string, payload: 
                 return { statusCode: 200, data: startupDB[collectionId].data, headers: headers }
             case 'tally':
                 return { statusCode: 200, data: { tally: Object.keys(startupDB[collectionId].data).length }, headers: headers }
-            case 'checkpoint':
-                return { statusCode: 200, data: startupDB[collectionId], headers: headers }
             default:
                 if (limit)
                     return {
@@ -477,8 +439,7 @@ const getRawCheckpoint = function (req: Req, res: Res, next: NextFunction, colle
     const db = req.startupDB
     const dataDirectory = './checkpoint/' + collection
     if (fileName.includes('.gz')) res.set('Content-Encoding', 'gzip')
-    if (fileName.includes('.ndjson')) res.set('Content-Type', 'application/x-ndjson')
-    else res.set('Content-Type', 'application/json')
+    res.set('Content-Type', 'application/x-ndjson')
     fs.createReadStream(path.join(db.dataFiles, dataDirectory, fileName)).pipe(res)
     return
 }
@@ -676,12 +637,13 @@ const processMethod = async function (req: Req, res: Res, next: NextFunction, co
         }
         if (response?.statusCode == 0) {
             if (req.method == 'GET' && query['fromOpLogId']) return await sendOpLog(req, res, next, parseInt(query['fromOpLogId']))
-            if (req.method == 'GET' && query.returnType == 'checkPoint') {
+            if (req.method == 'GET' && query.returnType?.toLowerCase() == 'checkpoint') {
                 const fileNameScanOrder = ['latest.ndjson.gz', 'latest.ndjson']
                 for (const fileName of fileNameScanOrder) {
-                    if (req.startupDB.options.serveRawCheckpoint && (await rawCheckpointExists(req, res, next, collection, fileName)))
-                        return getRawCheckpoint(req, res, next, collection, fileName)
+                    if (await rawCheckpointExists(req, res, next, collection, fileName)) return getRawCheckpoint(req, res, next, collection, fileName)
                 }
+                res.set('Content-Type', 'application/json')
+                res.status(200).send({ lastAccessed: 0, lastModified: 0, data: {}, savedAt: 0, length: 0 })
             }
             response = await method(req.startupDB, collection, req.body, query)
         }

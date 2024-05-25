@@ -16,7 +16,6 @@ export type DBResponse = {
 export type DBOptions = {
     dataFiles?: string
     readOnly?: boolean
-    serveRawCheckpoint?: boolean
     streamObjects?: boolean
     secondaryDataDirs?: Array<string>
     opLogArchive?: string

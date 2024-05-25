@@ -124,7 +124,6 @@ app.use(
             return serializePayload.includes('reject this document')
         },
         streamObjects: true,
-        serveRawCheckpoint: true,
     })
 )
 
@@ -722,34 +721,6 @@ describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint', function (
     })
 })
 
-describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint&id=Noot', function () {
-    it('should return a checkpoint object', function (done) {
-        request(app)
-            .get('/leesplank/origineel?returnType=checkpoint&id=Noot')
-            .set('Content-type', 'application/json')
-            .expect(200)
-            .expect('Content-Type', 'application/json; charset=utf-8')
-            .expect(function (res) {
-                assert.strictEqual(res.body.data.Noot.id, 'Noot')
-            })
-            .end(done)
-    })
-})
-
-describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint&filter=id=="Noot"', function () {
-    it('should return a checkpoint object', function (done) {
-        request(app)
-            .get('/leesplank/origineel?returnType=checkpoint&filter=id=="Noot"')
-            .set('Content-type', 'application/json')
-            .expect(200)
-            .expect('Content-Type', 'application/json; charset=utf-8')
-            .expect(function (res) {
-                assert.strictEqual(res.body.data.Noot.id, 'Noot')
-            })
-            .end(done)
-    })
-})
-
 describe('Behaviour: GET /leesplank/origineel?fromOpLogId=aap', function () {
     it('should return a 400 when requesting an malformed oplogId', function (done) {
         request(app).get('/leesplank/origineel?fromOpLogId=aap').set('Content-type', 'application/json').expect(400).end(done)
@@ -1042,15 +1013,16 @@ describe('Behaviour: GET /leesplank/array?returnType=checkpoint', function () {
     it('should return a checkpoint object with storageType array', function (done) {
         request(app)
             .get('/leesplank/array?returnType=checkpoint')
-            .set('Content-type', 'application/json')
             .expect(200)
-            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect('Content-Type', 'application/x-ndjson')
             .expect(function (res) {
-                assert.strictEqual(res.body.options.storageType, 'array')
+                const dbHeader = JSON.parse(res.text)
+                assert.strictEqual(dbHeader.options.storageType, 'array')
             })
             .end(done)
     })
 })
+
 describe('Behaviour: HEAD /leesplank/notthere', function () {
     it('should return 200 even on a non-existing collection', function (done) {
         request(app).head('/leesplank/notthere').set('Content-type', 'application/json').expect(200).end(done)
