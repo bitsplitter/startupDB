@@ -96,7 +96,7 @@ describe('Implementation: POST /leesplank (flush origineel )', function () {
         request(app)
             .post('/leesplank')
             .set('Content-type', 'application/json')
-            .send({ command: 'flush', collection: 'origineel' })
+            .send({ command: 'flush', collection: 'origineel', options: { archive: true } })
             .expect(200)
             .expect(function (res) {
                 assert.ok(fs.existsSync('./leesplank/checkpoint/origineel/latest.ndjson'))
@@ -142,7 +142,7 @@ describe('Implementation: POST /leesplank (flush ndjson )', function () {
         request(app)
             .post('/leesplank')
             .set('Content-type', 'application/json')
-            .send({ command: 'flush', collection: 'ndjson', options: { contentType: 'ndjson', force: true } })
+            .send({ command: 'flush', collection: 'ndjson', options: { contentType: 'ndjson', force: true, archive: true } })
             .expect(200)
             .expect(function (res) {
                 assert.ok(fs.existsSync('./leesplank/checkpoint/ndjson/latest.ndjson'))
@@ -181,7 +181,7 @@ describe('Implementation: POST /leesplank (flush nieuw)', function () {
         request(app)
             .post('/leesplank')
             .set('Content-type', 'application/json')
-            .send({ command: 'flush', collection: 'nieuw' })
+            .send({ command: 'flush', collection: 'nieuw', options: { archive: true } })
             .expect(200)
             .expect(function (res) {
                 assert.ok(fs.existsSync('./leesplank/checkpoint/nieuw/latest.ndjson'))
@@ -217,7 +217,7 @@ describe('Implementation: POST /leesplank', function () {
         request(app)
             .post('/leesplank')
             .set('Content-type', 'application/json')
-            .send({ command: 'flush', collection: 'origineel' })
+            .send({ command: 'flush', collection: 'origineel', options: { archive: true } })
             .expect(function (res) {
                 const dir = fs.readdirSync('./leesplank/checkpoint/origineel')
                 assert.deepEqual(fs.existsSync('./leesplank/checkpoint/origineel/latest.ndjson'), true)
@@ -354,22 +354,25 @@ describe('Implementation POST /leesplank/dropThisCollection', function () {
 })
 
 describe('Implementation: flush command ', function () {
-    it('Flush command should return a 200, create checkpoint and move oplog ', function (done) {
+    it('Flush command should return a 200, create checkpoint and remove oplog ', function (done) {
         request(app)
             .post('/leesplank')
             .set('Content-type', 'application/json')
-            .send({ command: 'flush', collection: 'dropThisCollection' })
+            .send({ command: 'flush', collection: 'dropThisCollection', options: { archive: false } })
             .expect(200)
             .expect(function (res) {
-                const dir = fs.readdirSync('./archive/oplog/dropThisCollection')
+                assert.ok(!fs.existsSync('./archive/oplog/dropThisCollection'))
                 assert.ok(fs.existsSync('./leesplank/checkpoint/dropThisCollection/latest.ndjson'))
                 assert.ok(!fs.existsSync('./leesplank/oplog/dropThisCollection/latest.ndjson'))
-                assert.ok(dir.length > 0)
             })
             .end(done)
     })
 })
-
+describe('Implementation: flush command ', function () {
+    it('Flush command should return a 400 when archive options is missing, ', function (done) {
+        request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'flush', collection: 'dropThisCollection' }).expect(400).end(done)
+    })
+})
 describe('Implementation POST /leesplank/dropThisCollection', function () {
     it('should return the POSTed body', function (done) {
         request(app)

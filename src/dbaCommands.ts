@@ -4,7 +4,10 @@ import tools from './tools'
 
 const flush = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, initStartupDB }: { startupDB: Database; initStartupDB: Function }) {
     const collection = commandParameters.collection
+    const archive = commandParameters.options?.archive
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'tp5ut557FOBN' } }
+    if (req.startupDB.options.opLogArchive != undefined && archive !== true && archive !== false)
+        return { statusCode: 400, message: { error: 'No archive option specified', errorId: 'pL40dIKj81aW' } }
     const force = commandParameters.options?.force
     if (!persist.existsSync('./oplog/' + collection + '/latest.ndjson', req.startupDB) && !force) return { response: 'OK' }
     const dataFiles = req.startupDB.dataFiles
@@ -34,7 +37,9 @@ const flush = async function (req: Req, commandParameters: DBCommandParameters, 
         return { statusCode: 500, message: { error: 'Unable to rename oplog', errorId: 'aH6sQe0O2jkc' } }
     }
     await persist.writeCheckpointToStream(ndJsonHeader, json.data, './checkpoint/' + collection, 'latest.ndjson', req.startupDB)
-    if (req.startupDB.options.opLogArchive != undefined) await persist.archive(`oplog/${collection}/${archiveFileName}`, `oplog/${collection}/${archiveFileName}`, req.startupDB)
+    if (req.startupDB.options.opLogArchive != undefined && archive == true)
+        await persist.archive(`oplog/${collection}/${archiveFileName}`, `oplog/${collection}/${archiveFileName}`, req.startupDB)
+    else await persist.rmdirSync(`oplog/${collection}/${archiveFileName}`, req.startupDB)
     return { response: 'OK' }
 }
 const create = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
