@@ -105,7 +105,7 @@ describe('Implementation: POST /leesplank (flush origineel )', function () {
         request(app)
             .post('/leesplank')
             .set('Content-type', 'application/json')
-            .send({ command: 'flush', collection: 'origineel' })
+            .send({ command: 'flush', collection: 'origineel', options: { archive: true } })
             .expect(200)
             .expect(function (res) {
                 assert.ok(fs.existsSync('./leesplank/checkpoint/origineel/latest.json'))
@@ -142,7 +142,7 @@ describe('Implementation: POST /leesplank (flush ndjson )', function () {
         request(app)
             .post('/leesplank')
             .set('Content-type', 'application/json')
-            .send({ command: 'flush', collection: 'ndjson', options: { contentType: 'ndjson', force: true } })
+            .send({ command: 'flush', collection: 'ndjson', options: { contentType: 'ndjson', force: true, archive: true } })
             .expect(200)
             .expect(function (res) {
                 assert.ok(fs.existsSync('./leesplank/checkpoint/ndjson/latest.ndjson'))
@@ -169,7 +169,7 @@ describe('Implementation: POST /leesplank (flush nieuw)', function () {
         request(app)
             .post('/leesplank')
             .set('Content-type', 'application/json')
-            .send({ command: 'flush', collection: 'nieuw' })
+            .send({ command: 'flush', collection: 'nieuw', options: { archive: true } })
             .expect(200)
             .expect(function (res) {
                 assert.ok(fs.existsSync('./leesplank/checkpoint/nieuw/latest.json'))
@@ -210,7 +210,7 @@ describe('Implementation: POST /leesplank', function () {
         request(app)
             .post('/leesplank')
             .set('Content-type', 'application/json')
-            .send({ command: 'flush', collection: 'origineel' })
+            .send({ command: 'flush', collection: 'origineel', options: { archive: true } })
             .expect(function (res) {
                 assert.ok(fs.existsSync('./leesplank/checkpoint/origineel/latest.json'))
             })
@@ -370,14 +370,19 @@ describe('Implementation: flush command ', function () {
         request(app)
             .post('/leesplank')
             .set('Content-type', 'application/json')
-            .send({ command: 'flush', collection: 'dropThisCollection' })
+            .send({ command: 'flush', collection: 'dropThisCollection', options: { archive: false } })
             .expect(200)
             .expect(function (res) {
                 assert.ok(fs.existsSync('./leesplank/checkpoint/dropThisCollection/latest.json'))
                 assert.ok(!fs.existsSync('./leesplank/oplog/dropThisCollection/1.json'))
-                assert.ok(fs.existsSync('./archive/oplog/dropThisCollection/1.json'))
+                assert.ok(!fs.existsSync('./archive/oplog/dropThisCollection/1.json'))
             })
             .end(done)
+    })
+})
+describe('Implementation: flush command ', function () {
+    it('Flush command should return a 400 when archive options is missing, ', function (done) {
+        request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'flush', collection: 'dropThisCollection' }).expect(400).end(done)
     })
 })
 

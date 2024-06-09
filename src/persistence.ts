@@ -70,6 +70,21 @@ const archive = async function (fileName: string, db: DBConfig) {
     }
     return
 }
+const remove = async function (fileName: string, db: DBConfig) {
+    db.options.secondaryDataDirs?.forEach((rootDir) => {
+        try {
+            fs.unlinkSync(path.join(rootDir, fileName))
+        } catch (e) {
+            // Don't panic
+        }
+    })
+    try {
+        await fs.unlinkSync(path.join(db.dataFiles, fileName))
+    } catch (e) {
+        // Don't panic
+    }
+    return
+}
 const rmdirSync = function (dirName: string, db: DBConfig) {
     db.options.secondaryDataDirs?.forEach((rootDir) => {
         try {
@@ -177,6 +192,7 @@ export default {
     readdirRecursive,
     readFile,
     rename,
+    remove,
     rmdirSync,
     writeFile,
     writeFileSync,

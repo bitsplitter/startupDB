@@ -5,16 +5,27 @@ import debug from 'debug'
 const debugLogger = debug('startupdb')
 
 /**
- * Move all files in an oplog folder to it's accompanying archive folder
+ * Move all files in an oplog folder that are obsolete to it's accompanying archive folder
  */
 const moveOpLog = async function (collection: string, oldCheckPoint: number, newCheckPoint: number, db: DBConfig) {
     for (let operation = oldCheckPoint; operation <= newCheckPoint; operation++) {
         await persist.archive(`oplog/${collection}/${operation}.json`, db)
     }
 }
+/**
+ * Remove all files in an oplog folder that are obsolete
+ */
+const clearOplog = async function (collection: string, oldCheckPoint: number, newCheckPoint: number, db: DBConfig) {
+    for (let operation = oldCheckPoint; operation <= newCheckPoint; operation++) {
+        await persist.remove(`oplog/${collection}/${operation}.json`, db)
+    }
+}
 const flush = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, initStartupDB }) {
     const collection = commandParameters.collection
+    const archive = commandParameters.options?.archive
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'tp5ut557FOBN' } }
+    if (req.startupDB.options.opLogArchive != undefined && archive !== true && archive !== false)
+        return { statusCode: 400, message: { error: 'No archive option specified', errorId: 'pL40dIKj81aW' } }
 
     const contentType = commandParameters.options?.contentType
     const force = commandParameters.options?.force
@@ -65,7 +76,8 @@ const flush = async function (req: Req, commandParameters: DBCommandParameters, 
             return { statusCode: 500, message: { error: 'Cannot save checkpoint', errorId: 'Wms3x0goxHni' } }
         }
     }
-    if (req.startupDB.options.opLogArchive != undefined) await moveOpLog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
+    if (req.startupDB.options.opLogArchive != undefined && archive == true) await moveOpLog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
+    else await clearOplog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
     return { response: 'OK' }
 }
 const create = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
