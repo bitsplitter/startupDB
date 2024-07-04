@@ -123,16 +123,10 @@ const drop = async function (req: Req, commandParameters: DBCommandParameters, {
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: '3CzZhhG6zuQ8' } }
     const dataFiles = req.startupDB.dataFiles
     const collectionId = dataFiles + '/' + collection
-    try {
-        persist.rmdirSync('./oplog/' + collection, req.startupDB)
-    } catch (err) {
-        // No worries
-    }
-    try {
-        persist.rmdirSync('./checkpoint/' + collection, req.startupDB)
-    } catch (err) {
-        // No worries
-    }
+    if (!persist.rmdirSync('./oplog/' + collection, req.startupDB)) return { statusCode: 500, message: { error: 'Cannot remove files from oplog', errorId: 'QWmnJ8sUdhzw' } }
+    if (!persist.rmdirSync('./checkpoint/' + collection, req.startupDB))
+        return { statusCode: 500, message: { error: 'Cannot remove files from checkpoint', errorId: 'Zmn8smIUdhzw' } }
+
     delete startupDB[collectionId]
     return { response: 'OK' }
 }

@@ -89,12 +89,15 @@ const rmdirSync = function (dirName: string, db: DBConfig) {
     db.options.secondaryDataDirs?.forEach((rootDir) => {
         try {
             fs.rmSync(path.join(rootDir, dirName), { recursive: true })
-        } catch (err) {}
+        } catch (err) {
+            return false
+        }
     })
     try {
         fs.rmSync(path.join(db.dataFiles, dirName), { recursive: true })
     } catch (err) {
-        // return false
+        console.log(err)
+        return false
     }
     return true
 }
