@@ -215,7 +215,7 @@ function getOplogIDsFromFileNames(files: Array<string>, checkPoint: number): Arr
     const opLogIds: Array<number> = []
     for (const fileName of files) {
         if (fileName.indexOf('.json') >= 0) {
-            const opLogId = parseInt(fileName.replace('.json', ''))
+            const opLogId = parseInt(fileName)
             if (opLogId <= checkPoint) continue // Not relevant because they are already flushed
             opLogIds.push(opLogId)
         }
@@ -228,9 +228,7 @@ function getOplogIDsFromFileNames(files: Array<string>, checkPoint: number): Arr
 const processOplog = async function (collection: string, db: DBConfig, checkPoint: number, func: (operation: Operation, length: number) => void) {
     const dataDirectory = './oplog/' + collection
     const files = await persist.readdir(dataDirectory, db)
-    const opLogIds = getOplogIDsFromFileNames(files, checkPoint).sort(function (a: number, b: number) {
-        return a - b
-    }) // opLog must be processed in order.
+    const opLogIds = getOplogIDsFromFileNames(files, checkPoint).sort((a: number, b: number) => a - b) // opLog must be processed in order.
     for (const opLogId of opLogIds) {
         try {
             const operation = <string>(<unknown>await persist.readFile(dataDirectory, opLogId + '.json', db))
@@ -263,7 +261,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     // We got the lock so we know we're the only one running this code now.
     // First check if the data we're after isn't already there (then someone else had the lock first and finished the work and we don't do anything)
     // Under high load, startupDB[collectionId] sometimes does not exist. startupDBGC might have kicked it out so we check here for !startupDB[collectionId]
-    if (!startupDB[collectionId] || startupDB[collectionId].nextOpLogId == 1) {
+    if (!startupDB[collectionId] || (!startupDB[collectionId].loading && !startupDB[collectionId].finishedLoading)) {
         debugLogger('Locked ' + collection)
         try {
             const ndJsononObject = await persist.readCheckpointFromStream(dataDirectory, 'latest.ndjson', db)
@@ -283,6 +281,8 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
             }
         }
         startupDB[collectionId].lock = mutex
+        startupDB[collectionId].loading = true
+        startupDB[collectionId].finishedLoading = false
         startupDB[collectionId].lastAccessed = new Date().getTime()
         checkPoint = startupDB[collectionId].checkPoint
         usedBytesInMemory += startupDB[collectionId].length
@@ -293,13 +293,15 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     } else {
         debugLogger('Locked... no need to retrieve', collection)
     }
+    startupDB[collectionId].loading = false
+    startupDB[collectionId].finishedLoading = true
     release() // Release the lock!
     debugLogger('Released ' + collection)
 }
 
 const loadCollection = async function (db: DBConfig, collection: string): Promise<boolean> {
     const collectionId = db.dataFiles + '/' + collection
-    if (!startupDB[collectionId]?.data || startupDB[collectionId].nextOpLogId == 1) await initStartupDB(db, collection)
+    if (!startupDB[collectionId] || startupDB[collectionId].loading || !startupDB[collectionId].finishedLoading) await initStartupDB(db, collection)
     if (!startupDB[collectionId]?.data) return false
     startupDB[collectionId].lastAccessed = new Date().getTime()
     return true

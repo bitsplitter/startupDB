@@ -716,7 +716,6 @@ describe('Behaviour: GET /leesplank/origineel?returnType=checkpoint', function (
             .expect(200)
             .expect('Content-Type', 'application/json; charset=utf-8')
             .expect(function (res) {
-                console.log('!!!!!!!!!!!', res.body)
                 assert.ok('checkPoint' in res.body)
                 assert.ok('nextOpLogId' in res.body)
             })
@@ -1289,7 +1288,7 @@ describe('Behaviour: expect GC after adding a lot of data', function () {
             .send({ command: 'inspect' })
             .expect(200)
             .expect(function (res) {
-                assert.strictEqual(res.body.usedBytesInMemory, 486)
+                assert.strictEqual(res.body.usedBytesInMemory, 526)
                 assert.strictEqual(res.body.nrCollectionsInCache, 1)
             })
             .end(done)

@@ -64,6 +64,8 @@ export interface Collection {
     nextOpLogId: number
     savedAt: number
     length: number
+    loading: boolean
+    finishedLoading: boolean
 }
 
 export interface Operation {
