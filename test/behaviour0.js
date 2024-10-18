@@ -929,13 +929,13 @@ describe('Implementation POST /leesplank', function () {
 })
 
 describe('Implementation POST /leesplank', function () {
-    it('executing an DROP command with without a collection returns an error', function (done) {
+    it('executing a DROP command with without a collection returns an error', function (done) {
         request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'drop' }).expect(400).end(done)
     })
 })
 describe('Implementation POST /leesplank', function () {
-    it('executing an DROP command on a non-existing collection returns an error', function (done) {
-        request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'drop', collection: 'doesnotexist' }).expect(500).end(done)
+    it('executing a DROP command on a non-existing collection returns OK', function (done) {
+        request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'drop', collection: 'doesnotexist' }).expect(200).end(done)
     })
 })
 
