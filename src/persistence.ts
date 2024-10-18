@@ -90,12 +90,14 @@ const rmdirSync = function (dirName: string, db: DBConfig) {
         try {
             fs.rmSync(path.join(rootDir, dirName), { recursive: true })
         } catch (err) {
+            if (err.code == 'ENOENT') return true // ignore
             return false
         }
     })
     try {
         fs.rmSync(path.join(db.dataFiles, dirName), { recursive: true })
     } catch (err) {
+        if (err.code == 'ENOENT') return true // ignore
         console.log(err)
         return false
     }
