@@ -13,6 +13,8 @@ const EMPTY_COLLECTION = {
     lastModified: 0,
     length: 0,
     opLogSize: 0,
+    loading: false,
+    finishedLoading: false,
 }
 /*
  * Ensure that an object is an array. If so, return object, else return a one-element array with the object
@@ -20,16 +22,6 @@ const EMPTY_COLLECTION = {
 function ensureArray(object: any): Array<any> {
     if (!Array.isArray(object)) return [object]
     return object
-}
-
-function isEmpty(item: object | []): boolean {
-    if (Array.isArray(item)) return item.length == 0
-    for (let key in item) {
-        if (item.hasOwnProperty(key)) {
-            return false
-        }
-    }
-    return true
 }
 
 function yyyymmddhhmmss_ms(date): string {
@@ -51,6 +43,5 @@ export default {
     deepCopy,
     EMPTY_COLLECTION,
     ensureArray,
-    isEmpty,
     yyyymmddhhmmss_ms,
 }

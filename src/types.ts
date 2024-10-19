@@ -63,6 +63,8 @@ export interface Collection {
     savedAt: number
     length: number
     opLogSize: number
+    loading: boolean
+    finishedLoading: boolean
 }
 
 export interface Operation {

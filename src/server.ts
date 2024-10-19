@@ -112,14 +112,8 @@ function logDateFormat(date: Date) {
     return date.toString().substring(0, 33)
 }
 
-function allObjectIdsExistInCollection(payload: Array<DBDataObject>, collectionCache: CollectionOfObjects): boolean {
-    return !payload.find((item) => !item.id || !collectionCache[item.id])
-}
 function anyObjectIdExistsInCollection(payload: Array<DBDataObject>, collectionCache: CollectionOfObjects): boolean {
     return !!payload.find((item) => item.id && collectionCache[item.id])
-}
-function getObjectsForIdsInPayload(payload: Array<DBDataObject>, collectionCache: CollectionOfObjects): ArrayOfDBDataObjects {
-    return payload.filter((item) => collectionCache[item.id]).map((item) => collectionCache[item.id])
 }
 function addIdsToItemsThatHaveNone(payload: Array<DBDataObject>): void {
     for (const item of payload) if (!item.id) item.id = uuidv4()
@@ -229,7 +223,6 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     const dataFiles = db.dataFiles
     const collectionId = dataFiles + '/' + collection
     const dataDirectory = './checkpoint/' + collection
-    let checkPoint = 0
 
     // We're entering a critical section here that should not run concurrently.
     let mutex: MutexInterface = startupDB[collectionId]?.lock
@@ -243,7 +236,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     // We got the lock so we know we're the only one running this code now.
     // First check if the data we're after isn't already there (then someone else had the lock first and finished the work and we don't do anything)
     // Under high load, startupDB[collectionId] sometimes does not exist. startupDBGC might have kicked it out so we check here for !startupDB[collectionId]
-    if (!startupDB[collectionId] || tools.isEmpty(startupDB[collectionId].data)) {
+    if (!startupDB[collectionId] || (!startupDB[collectionId].loading && !startupDB[collectionId].finishedLoading)) {
         debugLogger('Locked ' + collection)
         try {
             const ndJsononObject = await persist.readCheckpointFromStream(dataDirectory, 'latest.ndjson', db)
@@ -258,6 +251,8 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
             }
         }
         startupDB[collectionId].lock = mutex
+        startupDB[collectionId].loading = true
+        startupDB[collectionId].finishedLoading = false
         startupDB[collectionId].lastAccessed = new Date().getTime()
         usedBytesInMemory += startupDB[collectionId].length
         await processOplog(collection, db, 0, function (operation: Operation, length: number) {
@@ -266,13 +261,15 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     } else {
         debugLogger('Locked... no need to retrieve', collection)
     }
+    startupDB[collectionId].loading = false
+    startupDB[collectionId].finishedLoading = true
     release() // Release the lock!
     debugLogger('Released ' + collection)
 }
 
 const loadCollection = async function (db: DBConfig, collection: string): Promise<boolean> {
     const collectionId = db.dataFiles + '/' + collection
-    if (!startupDB[collectionId]?.data || tools.isEmpty(startupDB[collectionId].data)) await initStartupDB(db, collection)
+    if (!startupDB[collectionId] || startupDB[collectionId].loading || !startupDB[collectionId].finishedLoading) await initStartupDB(db, collection)
     if (!startupDB[collectionId]?.data) return false
     startupDB[collectionId].lastAccessed = new Date().getTime()
     return true
@@ -804,40 +801,16 @@ const registerHook = function (hooks: Array<string>, fn: Function) {
 
 module.exports = {
     db,
-    beforeGet: function (fn: Function) {
-        return registerHook(['beforeGet'], fn)
-    },
-    beforePost: function (fn: Function) {
-        return registerHook(['beforePost'], fn)
-    },
-    beforePatch: function (fn: Function) {
-        return registerHook(['beforePatch'], fn)
-    },
-    beforePut: function (fn: Function) {
-        return registerHook(['beforePut'], fn)
-    },
-    beforeDelete: function (fn: Function) {
-        return registerHook(['beforeDelete'], fn)
-    },
-    beforeAll: function (fn: Function) {
-        return registerHook(['beforeGet', 'beforePost', 'beforePatch', 'beforePut', 'beforeDelete'], fn)
-    },
-    afterGet: function (fn: Function) {
-        return registerHook(['afterGet'], fn)
-    },
-    afterPost: function (fn: Function) {
-        return registerHook(['afterPost'], fn)
-    },
-    afterPatch: function (fn: Function) {
-        return registerHook(['afterPatch'], fn)
-    },
-    afterPut: function (fn: Function) {
-        return registerHook(['afterPut'], fn)
-    },
-    afterDelete: function (fn: Function) {
-        return registerHook(['afterDelete'], fn)
-    },
-    afterAll: function (fn: Function) {
-        return registerHook(['afterGet', 'afterPost', 'afterPatch', 'afterPut', 'afterDelete'], fn)
-    },
+    beforeGet: (fn: Function) => registerHook(['beforeGet'], fn),
+    beforePost: (fn: Function) => registerHook(['beforePost'], fn),
+    beforePatch: (fn: Function) => registerHook(['beforePatch'], fn),
+    beforePut: (fn: Function) => registerHook(['beforePut'], fn),
+    beforeDelete: (fn: Function) => registerHook(['beforeDelete'], fn),
+    beforeAll: (fn: Function) => registerHook(['beforeGet', 'beforePost', 'beforePatch', 'beforePut', 'beforeDelete'], fn),
+    afterGet: (fn: Function) => registerHook(['afterGet'], fn),
+    afterPost: (fn: Function) => registerHook(['afterPost'], fn),
+    afterPatch: (fn: Function) => registerHook(['afterPatch'], fn),
+    afterPut: (fn: Function) => registerHook(['afterPut'], fn),
+    afterDelete: (fn: Function) => registerHook(['afterDelete'], fn),
+    afterAll: (fn: Function) => registerHook(['afterGet', 'afterPost', 'afterPatch', 'afterPut', 'afterDelete'], fn),
 }
