@@ -93,20 +93,16 @@ const propFunction = function (propertyName: string, get: (arg0: string) => any,
     if (positionOfDot < 0 && propertyName in obj) return get(propertyName)
     return propertyName.split('.').reduce((o, k) => (o || {})[k], obj)
 }
-let myFilter = function (s: string) {
-    return false
-}
-const lower = function (s: string) {
-    return s.toLowerCase()
-}
-const upper = function (s: string) {
-    return s.toUpperCase()
-}
+let myFilter = (s: string) => false
+const lower = (s: string) => s.toLowerCase()
+const upper = (s: string) => s.toUpperCase()
+const len = (s: string) => s.length
+
 const extract = function (array: Array<any>, property: string) {
     if (!Array.isArray(array)) return undefined
     return array.map((v) => v[property])
 }
-const filtrexOptions = { extraFunctions: { lower, upper, extract }, customProp: propFunction }
+const filtrexOptions = { extraFunctions: { lower, upper, extract, len }, customProp: propFunction }
 
 function logDateFormat(date: Date) {
     return date.toString().substring(0, 33)
