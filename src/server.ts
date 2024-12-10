@@ -348,7 +348,10 @@ const sendOpLog = async function (req: Req, res: Res, next: NextFunction, fromOp
     if (fsOpLogStats.size == 0) return res.sendStatus(200)
 
     res.set('Content-Length', '' + (fsOpLogStats.size - fromOpLogId))
-    fs.createReadStream(path.join(`${db.dataFiles}/oplog`, collection, 'latest.ndjson'), { start: fromOpLogId, end: fsOpLogStats.size - 1 }).pipe(res)
+    const oplogStream = fs.createReadStream(path.join(`${db.dataFiles}/oplog`, collection, 'latest.ndjson'), { start: fromOpLogId, end: fsOpLogStats.size - 1 })
+    oplogStream.pipe(res)
+    req.on('aborted', () => oplogStream.destroy())
+    res.on('close', () => oplogStream.destroy())
 }
 const getOfflineHeaders = async function (collectionId: string, db: DBConfig) {
     const ndJsonCheckpointFileName = './checkpoint/' + collectionId + '/latest.ndjson'
@@ -433,7 +436,10 @@ const getRawCheckpoint = function (req: Req, res: Res, next: NextFunction, colle
     const dataDirectory = './checkpoint/' + collection
     if (fileName.includes('.gz')) res.set('Content-Encoding', 'gzip')
     res.set('Content-Type', 'application/x-ndjson')
-    fs.createReadStream(path.join(db.dataFiles, dataDirectory, fileName)).pipe(res)
+    const checkpointStream = fs.createReadStream(path.join(db.dataFiles, dataDirectory, fileName))
+    checkpointStream.pipe(res)
+    req.on('aborted', () => checkpointStream.destroy())
+    res.on('close', () => checkpointStream.destroy())
     return
 }
 const rawCheckpointExists = async function (req: Req, res: Res, next: NextFunction, collection: string, fileName: string) {
@@ -656,10 +662,14 @@ const processMethod = async function (req: Req, res: Res, next: NextFunction, co
     if (Array.isArray(response.data)) {
         const jsonArrayStream = new streams.jsonArrayStream(response.data)
         jsonArrayStream.pipe(res)
+        req.on('aborted', () => jsonArrayStream.destroy())
+        res.on('close', () => jsonArrayStream.destroy())
         return
     }
     const jsonObjectStream = new streams.jsonObjectStream(response.data)
     jsonObjectStream.pipe(res)
+    req.on('aborted', () => jsonObjectStream.destroy())
+    res.on('close', () => jsonObjectStream.destroy())
 }
 
 const setupStartupDB = function (): DBConfig {
