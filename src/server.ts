@@ -712,10 +712,14 @@ const processMethod = async function (req: Req, res: Res, next: NextFunction, co
     if (Array.isArray(response.data)) {
         const jsonArrayStream = new streams.jsonArrayStream(response.data)
         jsonArrayStream.pipe(res)
+        req.on('aborted', () => jsonArrayStream.destroy())
+        res.on('close', () => jsonArrayStream.destroy())
         return
     }
     const jsonObjectStream = new streams.jsonObjectStream(response.data)
     jsonObjectStream.pipe(res)
+    req.on('aborted', () => jsonObjectStream.destroy())
+    res.on('close', () => jsonObjectStream.destroy())
 }
 
 const setupStartupDB = function (): DBConfig {
