@@ -10,11 +10,12 @@ Example
 
 ```
 const express = require('express')
-const startupDB = require('startupDB')
+const startupDB = require('./dist/server.js')
 
 const app = express()
-app.use("/myDB", startupDB.db)
-const server = app.listen(3000)
+app.use(express.json())
+app.use('/myDB', [startupDB.db({ dataFiles: './resources' })])
+app.listen(3000)
 ```
 
 This will create a database under the `myDB` directory. Every endpoint that starts with `/myDB` will translate to a collection with the same name. So `localhost:3000/myDB/user` will implement POST, GET, PUT, DELETE and PATCH endpoints to create, find, update, delete and change user documents. Data will be persisted to disk in `checkpoint/user` and `oplog/user` directories.
