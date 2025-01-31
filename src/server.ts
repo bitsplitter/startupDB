@@ -801,8 +801,7 @@ const db = function (options: DBOptions) {
             const dataFiles = db.dataFiles
             const collectionId = dataFiles + '/' + collection
             if (!startupDB[collectionId]) return
-            const checkPoint = startupDB[collectionId].checkPoint
-            await processOplog(collection, db, checkPoint, function (operation: Operation, length: number) {
+            await processOplog(collection, db, startupDB[collectionId].nextOpLogId, function (operation: Operation, length: number) {
                 startupDB[collectionId].nextOpLogId = operation.opLogId + 1
                 applyCRUDoperation(operation, db, length)
             })
