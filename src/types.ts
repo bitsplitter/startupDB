@@ -35,6 +35,7 @@ export type DBConfig = {
     afterPatch?: Array<Function>
     afterPut?: Array<Function>
     afterDelete?: Array<Function>
+    params?: object
     options: DBOptions
     dataFiles: string
     collection: string
