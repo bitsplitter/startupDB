@@ -849,6 +849,7 @@ const registerHook = function (hooks: Array<string>, fn: Function) {
     if (typeof fn != 'function') throw 'Registered hook is not a function'
     return async function (req: Req, res: Res, next: NextFunction) {
         if (!req.startupDB) req.startupDB = setupStartupDB()
+        req.startupDB.params = Object.assign(req.startupDB.params || {}, req.params)
 
         for (const hook of hooks) {
             if (!req.startupDB[hook]) req.startupDB[hook] = []
