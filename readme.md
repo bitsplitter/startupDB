@@ -210,6 +210,23 @@ function(req, response){
 }
 ```
 
+### Route parameters in hooks
+
+To define hooks for a specific route, one would add a middleware function before the catchall route like so:
+
+```
+app.use('/data/brands/:brandId/inventory', [beforeGetBrandInventory])
+app.use('/data', [db])
+```
+
+The `beforeGetBrandInventory` 'hook' can be defined like this:
+
+```
+export default startupDB.beforeAll(async (req: LcRequestI, response: Response): Promise<object> => {}
+```
+
+In order to access named route parameters, use req.startupDB.params instead of req.params. This is because your hoo' code will effectively run from within the 'db' module which will have parse the catchall route instead of the route you defined the hook for. req.startupDB.params gathers params from the rout that the hook was defined for.
+
 ## Commands
 
 startupDB supports several commands that can be executed by sending a POST or GET request to the root.
