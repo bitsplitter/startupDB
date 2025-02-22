@@ -62,8 +62,7 @@ const flush = async function (req: Req, commandParameters: DBCommandParameters, 
         await persist.writeCheckpointToStream(ndJsonHeader, json.data, './checkpoint/' + collection, 'latest.ndjson', req.startupDB)
     } else {
         try {
-            const serialized = JSON.stringify(startupDB[collectionId])
-            bufferToPersist = serialized
+            bufferToPersist = JSON.stringify(startupDB[collectionId])
         } catch (err) {
             debugLogger(err)
             return { statusCode: 500, message: { error: 'Cannot serialize checkpoint, object too large?', errorId: 'RKdCqPkPyr7p' } }
@@ -95,9 +94,7 @@ const create = async function (req: Req, commandParameters: DBCommandParameters,
     startupDB[collectionId].lastAccessed = new Date().getTime()
     if (commandParameters.options) startupDB[collectionId].options = commandParameters.options
     if (commandParameters.options?.storageType == 'array') startupDB[collectionId].data = []
-    const serialized = JSON.stringify(startupDB[collectionId])
-    let bufferToPersist = serialized
-    await persist.writeFile('./checkpoint/' + collection, 'latest.json', bufferToPersist, req.startupDB)
+    await persist.writeFile('./checkpoint/' + collection, 'latest.json', JSON.stringify(startupDB[collectionId]), req.startupDB)
     return { response: 'OK' }
 }
 const ensureCollection = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
@@ -113,9 +110,7 @@ const ensureCollection = async function (req: Req, commandParameters: DBCommandP
     startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
     if (commandParameters.options) startupDB[collectionId].options = commandParameters.options
     if (commandParameters.options?.storageType == 'array') startupDB[collectionId].data = []
-    const serialized = JSON.stringify(startupDB[collectionId])
-    let bufferToPersist = serialized
-    await persist.writeFile('./checkpoint/' + collection, 'latest.json', bufferToPersist, req.startupDB)
+    await persist.writeFile('./checkpoint/' + collection, 'latest.json', JSON.stringify(startupDB[collectionId]), req.startupDB)
     return { response: 'OK' }
 }
 const drop = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
