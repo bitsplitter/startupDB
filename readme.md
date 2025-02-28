@@ -163,6 +163,30 @@ function (operation, object, oldObject) {
     }
 ```
 
+## Commands
+
+startupDB supports several commands that can be executed by sending a POST or GET request to the root.
+
+For example:
+
+```
+curl --header "Content-Type: application/json" \
+  --request POST \
+  --data "{\"command\":\"purgeOplog\",\"collection\":\"00000/sku\"}" \
+  http://127.0.0.1:3000/data
+```
+
+| Command          | Method | Function                                                                                                                                                                                                                            | Parameters                                                                                  |
+| ---------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+|                  | GET    | List all collections.                                                                                                                                                                                                               |                                                                                             |
+| create           | POST   | Create collection, errors when it already exists.                                                                                                                                                                                   | collection:"string", storageType:"array" or "object"                                        |
+| drop             | POST   | Removes a collection from memory, oplog and checkpoint directories.                                                                                                                                                                 | collection:"string"                                                                         |
+| ensureCollection | POST   | Create collection if it does not exist, no error if it does.                                                                                                                                                                        | collection:"string", storageType:"array" or "object"                                        |
+| flush            | POST   | Create checkpoint and flush oplog.                                                                                                                                                                                                  | collection:"string"<br>options:{archive:true/false} mandatory when **opLogArchive** is used |
+| inspect          | POST   | return totalNrObjects in memory.                                                                                                                                                                                                    |                                                                                             |
+| purgeOplog       | POST   | remove all operations from opLog, restoring collection to previous checkpoint.<br>This is usefull for implementing tests. <br>Collection parameter can be "\*" to purge all collections or a comma separated string of collections. | collection:"string"                                                                         |
+|                  |        |                                                                                                                                                                                                                                     |                                                                                             |
+
 ## Hooks
 
 startupDB support databasehooks to run endpoint specific code either before or after the CRUD operation. They can be used for everything from authentication to data conversion.
@@ -225,28 +249,8 @@ The `beforeGetBrandInventory` 'hook' can be defined like this:
 export default startupDB.beforeAll(async (req: LcRequestI, response: Response): Promise<object> => {}
 ```
 
-In order to access named route parameters, use req.startupDB.params instead of req.params. This is because your hoo' code will effectively run from within the 'db' module which will have parse the catchall route instead of the route you defined the hook for. req.startupDB.params gathers params from the rout that the hook was defined for.
+In order to access named route parameters, use req.startupDB.params instead of req.params. This is because your hook code will effectively run from within the 'db' module which will have parsed the catchall route instead of the route you defined the hook for. req.startupDB.params gathers params from the rout that the hook was defined for.
 
-## Commands
+### Command in hooks
 
-startupDB supports several commands that can be executed by sending a POST or GET request to the root.
-
-For example:
-
-```
-curl --header "Content-Type: application/json" \
-  --request POST \
-  --data "{\"command\":\"purgeOplog\",\"collection\":\"00000/sku\"}" \
-  http://127.0.0.1:3000/data
-```
-
-| Command          | Method | Function                                                                                                                                                                                                                            | Parameters                                                                                  |
-| ---------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-|                  | GET    | List all collections.                                                                                                                                                                                                               |                                                                                             |
-| create           | POST   | Create collection, errors when it already exists.                                                                                                                                                                                   | collection:"string", storageType:"array" or "object"                                        |
-| drop             | POST   | Removes a collection from memory, oplog and checkpoint directories.                                                                                                                                                                 | collection:"string"                                                                         |
-| ensureCollection | POST   | Create collection if it does not exist, no error if it does.                                                                                                                                                                        | collection:"string", storageType:"array" or "object"                                        |
-| flush            | POST   | Create checkpoint and flush oplog.                                                                                                                                                                                                  | collection:"string"<br>options:{archive:true/false} mandatory when **opLogArchive** is used |
-| inspect          | POST   | return totalNrObjects in memory.                                                                                                                                                                                                    |                                                                                             |
-| purgeOplog       | POST   | remove all operations from opLog, restoring collection to previous checkpoint.<br>This is usefull for implementing tests. <br>Collection parameter can be "\*" to purge all collections or a comma separated string of collections. | collection:"string"                                                                         |
-|                  |        |                                                                                                                                                                                                                                     |                                                                                             |
+DBA commands can be executed from with hooks via the dbaCommands function. All sbaCommands are async.
