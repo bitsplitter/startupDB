@@ -1,5 +1,20 @@
 import v8 from 'v8'
-import { Req, Res, DBResponse, DBDataObject, DBOptions, DBConfig, Operation, CollectionOfObjects, Database, ArrayOfDBDataObjects, SomeFunctions } from './types'
+import {
+    Req,
+    Res,
+    DBResponse,
+    DBDataObject,
+    DBOptions,
+    DBConfig,
+    Operation,
+    CollectionOfObjects,
+    Database,
+    ArrayOfDBDataObjects,
+    CrudFunctions,
+    OperationType,
+    DBbeforeHookFunction,
+    DBafterHookFunction,
+} from './types'
 import { NextFunction } from 'express'
 import path from 'path'
 import { compileExpression } from 'filtrex'
@@ -108,9 +123,6 @@ function logDateFormat(date: Date) {
     return date.toString().substring(0, 33)
 }
 
-function allObjectIdsExistInCollection(payload: Array<DBDataObject>, collectionCache: CollectionOfObjects): boolean {
-    return !payload.find((item) => !item.id || !collectionCache[item.id])
-}
 function anyObjectIdExistsInCollection(payload: Array<DBDataObject>, collectionCache: CollectionOfObjects): boolean {
     return !!payload.find((item) => item.id && collectionCache[item.id])
 }
@@ -129,8 +141,8 @@ function validateDocuments(validator: Function, collection: string, documents: C
     }
     return { statusCode: 0 }
 }
-const crud = <SomeFunctions>{}
-crud.create = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
+const crud = <CrudFunctions>{}
+crud.create = function (operation: Operation, collectionId: string, db: DBConfig, length: number): DBResponse {
     if (startupDB[collectionId]?.options?.storageType == 'array') {
         for (const item of operation.data) {
             const arr = <ArrayOfDBDataObjects>startupDB[collectionId].data
@@ -158,15 +170,18 @@ crud.create = function (operation: Operation, collectionId: string, db: DBConfig
             usedBytesInMemory += delta
         }
     }
+    return { statusCode: 200 }
 }
-crud.delete = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
+crud.delete = function (operation: Operation, collectionId: string, db: DBConfig, length: number): DBResponse {
     for (const item of operation?.oldData || []) delete startupDB[collectionId].data[item.id]
+    return { statusCode: 200 }
     // We do not update memory consumption, deletes are rare and not worth the uncertainty of inacurate lengths
 }
-crud.update = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
+crud.update = function (operation: Operation, collectionId: string, db: DBConfig, length: number): DBResponse {
     crud.create(operation, collectionId, db, length)
+    return { statusCode: 200 }
 }
-crud.patch = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
+crud.patch = function (operation: Operation, collectionId: string, db: DBConfig, length: number): DBResponse {
     const addTimeStamps = db.options.addTimeStamps
     for (const item of operation.data) {
         const document = <DBDataObject>tools.deepCopy(startupDB[collectionId].data[item.id] || {})
@@ -195,8 +210,9 @@ crud.patch = function (operation: Operation, collectionId: string, db: DBConfig,
         startupDB[collectionId].length += delta
         usedBytesInMemory += delta
     }
+    return { statusCode: 200 }
 }
-const applyCRUDoperation = function (operation: Operation, db: DBConfig, length: number) {
+const applyCRUDoperation = function (operation: Operation, db: DBConfig, length: number): DBResponse {
     const crudOperation = operation.operation
     const collection = operation.collection
     const collectionId = db.dataFiles + '/' + collection
@@ -382,10 +398,10 @@ const sendOpLog = async function (req: Req, res: Res, next: NextFunction, fromOp
         if (operation.opLogId == fromOpLogId + 1) tooOld = false
         if (prevId != -1 && operation.opLogId > prevId + 1) return // a gap, don't send the rest
         prevId = operation.opLogId
-        if (operation.operation == 'patch' || operation.operation == 'update') {
+        if (operation.operation == OperationType.PATCH || operation.operation == OperationType.UPDATE) {
             opLog.push({ operation: operation.operation, collection: operation.collection, data: operation.data, opLogId: operation.opLogId, timestamp: operation.timestamp })
         }
-        if (operation.operation == 'create' || operation.operation == 'delete') {
+        if (operation.operation == OperationType.CREATE || operation.operation == OperationType.DELETE) {
             opLog.push(operation)
         }
     })
@@ -531,7 +547,7 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
         return { statusCode: 400, message: { error: 'No id or filter specified', errorId: 'lMeRiqyICPbU' } }
     }
     const operation = {
-        operation: 'delete',
+        operation: OperationType.DELETE,
         collection: collection,
         oldData: oldData,
         opLogId: 0,
@@ -575,7 +591,7 @@ const dbUpdateObjects = async function (db: DBConfig, collection: string, payloa
         if (errors.statusCode > 0) return errors
     }
     const operation = {
-        operation: 'update',
+        operation: OperationType.UPDATE,
         collection: collection,
         oldData: oldData,
         data: payload,
@@ -611,7 +627,7 @@ const dbPatchObjects = async function (db: DBConfig, collection: string, payload
 
     const oldData = getObjectsForIdsInPayload(payload, startupDB[collectionId].data)
     const operation = {
-        operation: 'patch',
+        operation: OperationType.PATCH,
         collection: collection,
         oldData: oldData,
         data: payload,
@@ -625,7 +641,7 @@ const dbPatchObjects = async function (db: DBConfig, collection: string, payload
     // If an error occurs, we don't write this update to the oplog. Worstcase scenario, we'll loose this patch in case of a DB crash
     try {
         const dbResponse = applyCRUDoperation(operation, db, db.contentLength)
-        if (dbResponse?.statusCode) return dbResponse
+        if (dbResponse?.statusCode != 200) return dbResponse
     } catch (e) {
         return { statusCode: 400, message: { error: 'Could not apply all patches', errorId: 'PUpDKuw4NqyU' } }
     }
@@ -665,7 +681,7 @@ const dbCreateObjects = async function (db: DBConfig, collection: string, payloa
         if (errors.statusCode > 0) return errors
     }
     const operation = {
-        operation: 'create',
+        operation: OperationType.CREATE,
         collection: collection,
         data: payload,
         opLogId: 0,
@@ -679,8 +695,17 @@ const dbCreateObjects = async function (db: DBConfig, collection: string, payloa
     return { statusCode: 200, data: query?.returnType != 'tally' ? payload : { tally: payload.length } }
 }
 
-const processMethod = async function (req: Req, res: Res, next: NextFunction, collection: string, query: any, preHooks: Function[], method: Function, postHooks: Function[]) {
-    let response = { statusCode: 0, data: {}, message: '', headers: {} }
+const processMethod = async function (
+    req: Req,
+    res: Res,
+    next: NextFunction,
+    collection: string,
+    query: any,
+    preHooks: DBbeforeHookFunction[],
+    method: Function,
+    postHooks: DBafterHookFunction[]
+) {
+    let response = { statusCode: 0, data: {}, message: '', headers: {} } as DBResponse
     try {
         for (const beforeFn of preHooks) {
             response = await beforeFn(req, res, next, req.startupDB.collection)
@@ -723,7 +748,15 @@ const processMethod = async function (req: Req, res: Res, next: NextFunction, co
 }
 
 const setupStartupDB = function (): DBConfig {
-    const noop = function () {}
+    const noop = async function (collection: string, payload: ArrayOfDBDataObjects): Promise<DBResponse> {
+        return { statusCode: 0, data: {}, message: '', headers: {} } as DBResponse
+    }
+    const noopPullOplog = async function (collection: string): Promise<void> {
+        return
+    }
+    const noopExecuteDBAcommad = async function (payload: any): Promise<any> {
+        return
+    }
     return {
         options: {},
         dataFiles: '',
@@ -734,8 +767,8 @@ const setupStartupDB = function (): DBConfig {
         updateObjects: noop,
         deleteObjects: noop,
         patchObjects: noop,
-        executeDBAcommand: noop,
-        pullOplog: noop,
+        executeDBAcommand: noopExecuteDBAcommad,
+        pullOplog: noopPullOplog,
     }
 }
 /**
@@ -792,11 +825,14 @@ const db = function (options: DBOptions) {
             if (options.readOnly) return res.sendStatus(403)
             return dbPatchObjects(req.startupDB, collection, tools.ensureArray(payload))
         }
-        req.startupDB.executeDBAcommand = async function (payload: ArrayOfDBDataObjects) {
+        req.startupDB.executeDBAcommand = async function (payload: any) {
             return dbExecuteDBAcommand(req, payload, { usedBytesInMemory, startupDB, initStartupDB, startupDBGC })
         }
-        req.startupDB.pullOplog = async function (collection: string, query) {
-            if (!options.readOnly) return res.sendStatus(403) // pullOplog is for stateless secondary servers, not intended for use on statefull main server.
+        req.startupDB.pullOplog = async function (collection: string): Promise<void> {
+            if (!options.readOnly) {
+                res.sendStatus(403) // pullOplog is for stateless secondary servers, not intended for use on statefull main server.
+                return
+            }
             const db = req.startupDB
             const dataFiles = db.dataFiles
             const collectionId = dataFiles + '/' + collection
@@ -860,40 +896,16 @@ const registerHook = function (hooks: Array<string>, fn: Function) {
 
 module.exports = {
     db,
-    beforeGet: function (fn: Function) {
-        return registerHook(['beforeGet'], fn)
-    },
-    beforePost: function (fn: Function) {
-        return registerHook(['beforePost'], fn)
-    },
-    beforePatch: function (fn: Function) {
-        return registerHook(['beforePatch'], fn)
-    },
-    beforePut: function (fn: Function) {
-        return registerHook(['beforePut'], fn)
-    },
-    beforeDelete: function (fn: Function) {
-        return registerHook(['beforeDelete'], fn)
-    },
-    beforeAll: function (fn: Function) {
-        return registerHook(['beforeGet', 'beforePost', 'beforePatch', 'beforePut', 'beforeDelete'], fn)
-    },
-    afterGet: function (fn: Function) {
-        return registerHook(['afterGet'], fn)
-    },
-    afterPost: function (fn: Function) {
-        return registerHook(['afterPost'], fn)
-    },
-    afterPatch: function (fn: Function) {
-        return registerHook(['afterPatch'], fn)
-    },
-    afterPut: function (fn: Function) {
-        return registerHook(['afterPut'], fn)
-    },
-    afterDelete: function (fn: Function) {
-        return registerHook(['afterDelete'], fn)
-    },
-    afterAll: function (fn: Function) {
-        return registerHook(['afterGet', 'afterPost', 'afterPatch', 'afterPut', 'afterDelete'], fn)
-    },
+    beforeGet: (fn: Function) => registerHook(['beforeGet'], fn),
+    beforePost: (fn: Function) => registerHook(['beforePost'], fn),
+    beforePatch: (fn: Function) => registerHook(['beforePatch'], fn),
+    beforePut: (fn: Function) => registerHook(['beforePut'], fn),
+    beforeDelete: (fn: Function) => registerHook(['beforeDelete'], fn),
+    beforeAll: (fn: Function) => registerHook(['beforeGet', 'beforePost', 'beforePatch', 'beforePut', 'beforeDelete'], fn),
+    afterGet: (fn: Function) => registerHook(['afterGet'], fn),
+    afterPost: (fn: Function) => registerHook(['afterPost'], fn),
+    afterPatch: (fn: Function) => registerHook(['afterPatch'], fn),
+    afterPut: (fn: Function) => registerHook(['afterPut'], fn),
+    afterDelete: (fn: Function) => registerHook(['afterDelete'], fn),
+    afterAll: (fn: Function) => registerHook(['afterGet', 'afterPost', 'afterPatch', 'afterPut', 'afterDelete'], fn),
 }

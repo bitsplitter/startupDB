@@ -1,4 +1,4 @@
-import { Req, DBConfig, DBCommandParameters } from './types'
+import { Req, DBConfig, FlushCommandParams, CreateCommandParams, DropCommandParams, PurgeCommandParams, SimpleCommandParams } from './types'
 import persist from './persistence'
 import tools from './tools'
 import debug from 'debug'
@@ -20,7 +20,7 @@ const clearOplog = async function (collection: string, oldCheckPoint: number, ne
         await persist.remove(`oplog/${collection}/${operation}.json`, db)
     }
 }
-const flush = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, initStartupDB }) {
+const flush = async function (req: Req, commandParameters: FlushCommandParams, { startupDB, initStartupDB }) {
     const collection = commandParameters.collection
     const archive = commandParameters.options?.archive
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'tp5ut557FOBN' } }
@@ -79,7 +79,7 @@ const flush = async function (req: Req, commandParameters: DBCommandParameters, 
     else await clearOplog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
     return { response: 'OK' }
 }
-const create = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
+const create = async function (req: Req, commandParameters: CreateCommandParams, { startupDB }) {
     const collection = commandParameters.collection
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'z3CZhGh6zoSR' } }
     const dataFiles = req.startupDB.dataFiles
@@ -97,7 +97,7 @@ const create = async function (req: Req, commandParameters: DBCommandParameters,
     await persist.writeFile('./checkpoint/' + collection, 'latest.json', JSON.stringify(startupDB[collectionId]), req.startupDB)
     return { response: 'OK' }
 }
-const ensureCollection = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
+const ensureCollection = async function (req: Req, commandParameters: CreateCommandParams, { startupDB }) {
     const collection = commandParameters.collection
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'z3CZhGh6zoSR' } }
     const dataFiles = req.startupDB.dataFiles
@@ -113,7 +113,7 @@ const ensureCollection = async function (req: Req, commandParameters: DBCommandP
     await persist.writeFile('./checkpoint/' + collection, 'latest.json', JSON.stringify(startupDB[collectionId]), req.startupDB)
     return { response: 'OK' }
 }
-const drop = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
+const drop = async function (req: Req, commandParameters: DropCommandParams, { startupDB }) {
     const collection = commandParameters.collection
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: '3CzZhhG6zuQ8' } }
     const dataFiles = req.startupDB.dataFiles
@@ -125,7 +125,7 @@ const drop = async function (req: Req, commandParameters: DBCommandParameters, {
     delete startupDB[collectionId]
     return { response: 'OK' }
 }
-const purgeOplog = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, initStartupDB }) {
+const purgeOplog = async function (req: Req, commandParameters: PurgeCommandParams, { startupDB, initStartupDB }) {
     const collections = commandParameters.collection
     if (!collections) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'CIvNZ51YQM6q' } }
     if (collections == '*') {
@@ -142,7 +142,7 @@ const purgeOplog = async function (req: Req, commandParameters: DBCommandParamet
     }
     return { response: 'OK' }
 }
-const clearCache = async function (req: Req, commandParameters: DBCommandParameters, { startupDB, initStartupDB }) {
+const clearCache = async function (req: Req, commandParameters: PurgeCommandParams, { startupDB, initStartupDB }) {
     const collection = commandParameters.collection
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'CIvNZ51YQM6q' } }
     if (collection == '*') {
@@ -154,13 +154,13 @@ const clearCache = async function (req: Req, commandParameters: DBCommandParamet
     startupDB[collectionId] = {}
     return { response: 'OK' }
 }
-const garbageCollector = async function (req: Req, commandParameters: DBCommandParameters, { startupDBGC }) {
+const garbageCollector = async function (req: Req, commandParameters: SimpleCommandParams, { startupDBGC }) {
     const deletedCollections = startupDBGC()
     return { status: 'success', deletedCollections: deletedCollections }
 }
 const inspect = async function (
     req: Req,
-    commandParameters: DBCommandParameters,
+    commandParameters: SimpleCommandParams,
     { startupDB, MAX_BYTES_IN_MEMORY, usedBytesInMemory }: { startupDB: any; MAX_BYTES_IN_MEMORY: number; usedBytesInMemory: number }
 ) {
     const v8 = require('v8')
@@ -183,7 +183,7 @@ const inspect = async function (
         nrCollectionsInCache: orderedCollections.length,
     }
 }
-const list = async function (req: Req, commandParameters: DBCommandParameters, { startupDB }) {
+const list = async function (req: Req, commandParameters: SimpleCommandParams, { startupDB }) {
     const dataFiles = req.startupDB.dataFiles
     const collectionsList = Object.keys(startupDB).map((collectionName) => {
         return {
