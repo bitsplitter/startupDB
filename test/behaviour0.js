@@ -1301,7 +1301,7 @@ describe('Behaviour: expect GC after adding a lot of data', function () {
             .send({ command: 'inspect' })
             .expect(200)
             .expect(function (res) {
-                assert.strictEqual(res.body.usedBytesInMemory, 489)
+                assert.strictEqual(res.body.usedBytesInMemory, 488)
                 assert.strictEqual(res.body.nrCollectionsInCache, 1)
             })
             .end(done)

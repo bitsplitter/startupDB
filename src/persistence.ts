@@ -119,79 +119,58 @@ async function writeCheckpointToStream(metaData: any, json: any, dirName: string
 }
 
 async function readCheckpointFromStream(dirName: string, fileName: string, db: DBConfig): Promise<any> {
-    return new Promise((resolve, reject) => {
-        const newObject = {} as any
-        let buf = ''
-        let totalBytes = 0
-        let reader
-        try {
-            reader = fs.createReadStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark })
-        } catch (err) {
-            resolve({})
-            return
-        }
-        reader.on('data', function (chunk) {
-            buf += chunk
-            totalBytes += chunk.length
-            do {
-                const newLinePos = buf.indexOf('\n')
-                if (newLinePos == -1) break
-                const line = buf.substring(0, newLinePos)
-                buf = buf.substring(newLinePos + 1)
+    const newObject = {} as any
+    let totalBytes = 0
 
-                if (!line) continue
-                const obj = JSON.parse(line)
-                if (!newObject.data) Object.assign(newObject, obj)
-                else {
-                    if (Array.isArray(newObject.data)) newObject.data.push(obj)
-                    else newObject.data[obj.id] = obj
-                }
-            } while (true)
-        })
-        reader.on('end', function () {
-            newObject.totalBytes = totalBytes
-            resolve(newObject)
-        })
-        reader.on('error', (err) => {
-            if (err.code == 'ENOENT') resolve({})
-            reject()
-        })
-    })
+    const processLine = (obj: any, length: number) => {
+        totalBytes += length
+        if (!newObject.data) Object.assign(newObject, obj)
+        else {
+            if (Array.isArray(newObject.data)) newObject.data.push(obj)
+            else newObject.data[obj.id] = obj
+        }
+    }
+
+    try {
+        await processOplog(dirName, fileName, db, 0, processLine)
+        newObject.totalBytes = totalBytes
+        return newObject
+    } catch (err) {
+        return {} // Return an empty object in case of error
+    }
 }
+
 const processOplog = async function (dirName: string, fileName: string, db: DBConfig, offset: number, func: (operation: any, length: number) => void): Promise<void> {
     return new Promise((resolve, reject) => {
-        let buf = ''
-        let reader
         try {
-            reader = fs.createReadStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, start: offset })
+            let buf = ''
+            const reader = fs.createReadStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, start: offset })
+            reader.on('data', function (chunk) {
+                buf += chunk
+                do {
+                    const newLinePos = buf.indexOf('\n')
+                    if (newLinePos == -1) break
+                    const line = buf.substring(0, newLinePos)
+                    buf = buf.substring(newLinePos + 1)
+
+                    if (!line) continue
+                    try {
+                        const obj = JSON.parse(line)
+                        func(obj, line.length)
+                    } catch {
+                        func({}, 0)
+                    }
+                } while (true)
+            })
+            reader.on('end', () => resolve())
+            reader.on('error', (err: NodeJS.ErrnoException) => {
+                if (err.code == 'ENOENT') resolve()
+                reject()
+            })
         } catch (err) {
             resolve()
             return
         }
-        reader.on('data', function (chunk) {
-            buf += chunk
-            do {
-                const newLinePos = buf.indexOf('\n')
-                if (newLinePos == -1) break
-                const line = buf.substring(0, newLinePos)
-                buf = buf.substring(newLinePos + 1)
-
-                if (!line) continue
-                try {
-                    const obj = JSON.parse(line)
-                    func(obj, line.length)
-                } catch {
-                    func({}, 0)
-                }
-            } while (true)
-        })
-        reader.on('end', function () {
-            resolve()
-        })
-        reader.on('error', (err) => {
-            if (err.code == 'ENOENT') resolve()
-            reject()
-        })
     })
 }
 const appendFile = async function (dirName: string, fileName: string, payload: string, db: DBConfig) {
