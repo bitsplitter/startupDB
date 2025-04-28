@@ -1,5 +1,7 @@
 import { DBConfig } from './types'
 const { PassThrough } = require('stream')
+import { pipeline, Transform } from 'stream'
+import { TextDecoder } from 'util'
 
 import fs from 'fs-extra'
 import path from 'path'
@@ -140,39 +142,99 @@ async function readCheckpointFromStream(dirName: string, fileName: string, db: D
     }
 }
 
-const processOplog = async function (dirName: string, fileName: string, db: DBConfig, offset: number, func: (operation: any, length: number) => void): Promise<void> {
-    return new Promise((resolve, reject) => {
-        try {
-            let buf = ''
-            const reader = fs.createReadStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, start: offset })
-            reader.on('data', function (chunk) {
-                buf += chunk
-                do {
-                    const newLinePos = buf.indexOf('\n')
-                    if (newLinePos == -1) break
-                    const line = buf.substring(0, newLinePos)
-                    buf = buf.substring(newLinePos + 1)
+const BUFFER_POOL_SIZE = 1024 * 64 // 64KB reusable pool
+const pooledBuffer = new Uint8Array(BUFFER_POOL_SIZE)
 
-                    if (!line) continue
-                    try {
-                        const obj = JSON.parse(line)
-                        func(obj, line.length)
-                    } catch {
-                        func({}, 0)
+const processOplog = async (dirName: string, fileName: string, db: DBConfig, offset: number, func: (operation: any, length: number) => void): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        let bufferLength = 0
+
+        const decodeUtf8Stream = new Transform({
+            readableObjectMode: true,
+            transform(chunk, encoding, callback) {
+                const chunkArray = new Uint8Array(chunk)
+
+                // Ensure buffer has enough capacity
+                if (bufferLength + chunkArray.length > pooledBuffer.length) {
+                    callback(new Error('Line buffer overflow'))
+                    return
+                }
+
+                pooledBuffer.set(chunkArray, bufferLength)
+                bufferLength += chunkArray.length
+
+                let start = 0
+                for (let i = 0; i < bufferLength; i++) {
+                    if (pooledBuffer[i] === 10) {
+                        // '\n' character
+                        const lineBytes = pooledBuffer.slice(start, i)
+                        this.push(lineBytes)
+                        start = i + 1
                     }
-                } while (true)
-            })
-            reader.on('end', () => resolve())
-            reader.on('error', (err: NodeJS.ErrnoException) => {
-                if (err.code == 'ENOENT') resolve()
-                reject()
-            })
-        } catch (err) {
-            resolve()
-            return
-        }
+                }
+
+                // Move remaining bytes to beginning of buffer
+                if (start < bufferLength) {
+                    pooledBuffer.copyWithin(0, start, bufferLength)
+                    bufferLength = bufferLength - start
+                } else {
+                    bufferLength = 0
+                }
+
+                callback()
+            },
+            flush(callback) {
+                if (bufferLength > 0) {
+                    this.push(pooledBuffer.slice(0, bufferLength))
+                }
+                callback()
+            },
+        })
+
+        const sharedDecoder = new TextDecoder('utf-8')
+
+        const splitLines = new Transform({
+            readableObjectMode: true,
+            writableObjectMode: true,
+            transform(chunk: Uint8Array, encoding, callback) {
+                // Streaming decode ensures multibyte characters split across chunks are preserved
+                const text = sharedDecoder.decode(chunk, { stream: true })
+                callback(null, text)
+            },
+            flush(callback) {
+                const final = sharedDecoder.decode()
+                if (final) this.push(final)
+                callback()
+            },
+        })
+
+        const inputStream = fs.createReadStream(path.join(db.dataFiles, dirName, fileName), {
+            highWaterMark,
+            start: offset,
+        })
+
+        pipeline(inputStream, decodeUtf8Stream, splitLines, (err) => {
+            if (err) {
+                if ((err as NodeJS.ErrnoException).code === 'ENOENT') resolve()
+                else reject(err)
+            } else {
+                resolve()
+            }
+        })
+
+        splitLines.on('data', (line: string) => {
+            if (line) {
+                try {
+                    const obj = JSON.parse(line)
+                    func(obj, line.length)
+                } catch {
+                    func({}, 0)
+                }
+            }
+        })
     })
 }
+
 const appendFile = async function (dirName: string, fileName: string, payload: string, db: DBConfig) {
     if (db.options.secondaryDataDirs)
         for await (const rootDir of db.options.secondaryDataDirs) {
