@@ -254,3 +254,9 @@ In order to access named route parameters, use req.startupDB.params instead of r
 ### Command in hooks
 
 DBA commands can be executed from with hooks via the dbaCommands function. All sbaCommands are async.
+
+## Configurable in source
+
+### ARRAY_BUFFER_POOL and HIGHWATERMARK
+
+ARRAY_BUFFER_POOL is set to 16x HIGHWATERMARK. This give 16 \* 64K - 1Mb maxndjson line = max object size.
