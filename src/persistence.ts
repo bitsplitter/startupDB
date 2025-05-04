@@ -5,7 +5,7 @@ import { TextDecoder } from 'util'
 
 import fs from 'fs-extra'
 import path from 'path'
-const highWaterMark = 64 * 1024
+const HIGHWATERMARK = 64 * 1024
 
 function readdirRecursive(dirName: string) {
     const list: string[] = []
@@ -97,7 +97,7 @@ async function writeCheckpointToStream(metaData: any, json: any, dirName: string
         const passthroughStream = new PassThrough()
 
         const secondaryFileNames = db.options.secondaryDataDirs?.map((rootDir) => path.join(rootDir, dirName, fileName))
-        const writer = fs.createWriteStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, flags: 'w' })
+        const writer = fs.createWriteStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: HIGHWATERMARK, flags: 'w' })
         const secondaryStreams = secondaryFileNames?.map((fileName) => fs.createWriteStream(fileName))
         passthroughStream.pipe(writer)
 
@@ -142,7 +142,7 @@ async function readCheckpointFromStream(dirName: string, fileName: string, db: D
     }
 }
 
-const BUFFER_POOL_SIZE = 1024 * 64 // 64KB reusable pool
+const BUFFER_POOL_SIZE = HIGHWATERMARK * 16 // 1Mb reusable pool
 const pooledBuffer = new Uint8Array(BUFFER_POOL_SIZE)
 
 const processOplog = async (dirName: string, fileName: string, db: DBConfig, offset: number, func: (operation: any, length: number) => void): Promise<void> => {
@@ -209,7 +209,7 @@ const processOplog = async (dirName: string, fileName: string, db: DBConfig, off
         })
 
         const inputStream = fs.createReadStream(path.join(db.dataFiles, dirName, fileName), {
-            highWaterMark,
+            highWaterMark: HIGHWATERMARK,
             start: offset,
         })
 
