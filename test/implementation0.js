@@ -404,5 +404,4 @@ describe('Implementation: drop command ', function () {
     })
 })
 
-// TODO: Write implementation tests for using zipped and unzipped JSON arrays from external sources as checkpoint
 server.close()

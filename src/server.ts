@@ -163,7 +163,7 @@ crud.update = function (operation: Operation, collectionId: string, db: DBConfig
 crud.patch = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
     const addTimeStamps = db.options.addTimeStamps
     for (const item of operation.data) {
-        const document = <DBDataObject>tools.deepCopy(startupDB[collectionId].data[item.id] || {})
+        const document = <DBDataObject>tools.deepCopy(startupDB[collectionId].data[item.id] || { id: item.id })
         let patchedDocument = document
         try {
             if (typeof addTimeStamps == 'function') addTimeStamps('modified_patch', patchedDocument, document, item)
@@ -190,9 +190,8 @@ crud.patch = function (operation: Operation, collectionId: string, db: DBConfig,
         usedBytesInMemory += delta
     }
 }
-const applyCRUDoperation = function (operation: Operation, db: DBConfig, length: number) {
+const applyCRUDoperation = function (operation: Operation, collection: string, db: DBConfig, length: number) {
     const crudOperation = operation.operation
-    const collection = operation.collection
     const collectionId = db.dataFiles + '/' + collection
     const crudFunction = crud[crudOperation]
     if (!crudFunction) return
@@ -252,7 +251,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
         startupDB[collectionId].lastAccessed = new Date().getTime()
         usedBytesInMemory += startupDB[collectionId].length
         await processOplog(collection, db, 0, function (operation: Operation, length: number) {
-            applyCRUDoperation(operation, db, length)
+            applyCRUDoperation(operation, collection, db, length)
         })
     } else {
         debugLogger('Locked... no need to retrieve', collection)
@@ -492,7 +491,7 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
         },
     }
     await writeOperationToOpLog(operation, db)
-    applyCRUDoperation(operation, db, db.contentLength)
+    applyCRUDoperation(operation, collection, db, db.contentLength)
     return { statusCode: 200, data: query?.returnType != 'tally' ? oldData : { tally: oldData.length } }
 }
 
@@ -534,7 +533,7 @@ const dbUpdateObjects = async function (db: DBConfig, collection: string, payloa
         },
     }
     await writeOperationToOpLog(operation, db)
-    applyCRUDoperation(operation, db, db.contentLength)
+    applyCRUDoperation(operation, collection, db, db.contentLength)
     return { statusCode: 200, data: query?.returnType != 'tally' ? payload : { tally: payload.length } }
 }
 
@@ -570,7 +569,7 @@ const dbPatchObjects = async function (db: DBConfig, collection: string, payload
     // We're a bit lazy here. We should have checked wheter all the patches could be applied, instead, we let applyCRUDoperation figure it out.
     // If an error occurs, we don't write this update to the oplog. Worstcase scenario, we'll loose this patch in case of a DB crash
     try {
-        const dbResponse = applyCRUDoperation(operation, db, db.contentLength)
+        const dbResponse = applyCRUDoperation(operation, collection, db, db.contentLength)
         if (dbResponse?.statusCode) return dbResponse
     } catch (e) {
         return { statusCode: 400, message: { error: 'Could not apply all patches', errorId: 'PUpDKuw4NqyU' } }
@@ -621,7 +620,7 @@ const dbCreateObjects = async function (db: DBConfig, collection: string, payloa
         },
     }
     await writeOperationToOpLog(operation, db)
-    applyCRUDoperation(operation, db, db.contentLength)
+    applyCRUDoperation(operation, collection, db, db.contentLength)
     return { statusCode: 200, data: query?.returnType != 'tally' ? payload : { tally: payload.length } }
 }
 
@@ -752,7 +751,7 @@ const db = function (options: DBOptions) {
             const collectionId = dataFiles + '/' + collection
             if (!startupDB[collectionId]) return
             await processOplog(collection, db, startupDB[collectionId].opLogSize, function (operation: Operation, length: number) {
-                applyCRUDoperation(operation, db, length)
+                applyCRUDoperation(operation, collection, db, length)
             })
         }
         const collection = req.startupDB.collection

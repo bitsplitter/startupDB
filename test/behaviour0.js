@@ -871,7 +871,7 @@ describe('Behaviour: PATCH /leesplank/silent', function () {
                 {
                     id: 'Jet',
                     patch: [
-                        { op: 'replace', path: '/description', value: 'Rerteketet.' },
+                        { op: 'replace', path: '/description', value: 'Retteketet.' },
                         { op: 'add', path: '/english', value: 'Sister' },
                     ],
                 },
@@ -1324,6 +1324,37 @@ describe('Behaviour: get /', function () {
                 assert.strictEqual(res.body.collections[6].name, 'array')
                 assert.strictEqual(res.body.collections[7].name, 'array2')
                 assert.strictEqual(res.body.collections.length, 8)
+            })
+            .end(done)
+    })
+})
+// The next 4 tests assert data persistence and reloading behaviour
+describe('Behaviour: clearCache', function () {
+    it('executing a clearCache command with a collection should return a 200', function (done) {
+        request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'clearCache', collection: 'silent' }).expect(200).end(done)
+    })
+})
+describe('Behaviour flush command without prior checkpoint', function () {
+    it('executing a flush command without a prior checkpoint should return a 200', function (done) {
+        request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'flush', collection: 'silent' }).expect(200).end(done)
+    })
+})
+describe('Behaviour: clearCache', function () {
+    it('executing a clearCache command with a collection should return a 200', function (done) {
+        request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'clearCache', collection: 'silent' }).expect(200).end(done)
+    })
+})
+describe('Behaviour: GET /leesplank/silent', function () {
+    // After clearing cache and creating a checkpoint, we expect all data to be reloaded in memory properly.
+    it('should return objects in silent after collection reloads in memory', function (done) {
+        request(app)
+            .get('/leesplank/silent')
+            .set('Content-type', 'application/json')
+            .expect(200)
+            .expect('Content-Type', 'application/json; charset=utf-8')
+            .expect(function (res) {
+                assert.strictEqual(res.body.length, 1)
+                assert.strictEqual(res.body[0].id, 'Jet')
             })
             .end(done)
     })
