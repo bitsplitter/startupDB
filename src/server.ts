@@ -163,12 +163,13 @@ crud.update = function (operation: Operation, collectionId: string, db: DBConfig
 crud.patch = function (operation: Operation, collectionId: string, db: DBConfig, length: number) {
     const addTimeStamps = db.options.addTimeStamps
     for (const item of operation.data) {
+        const originalDocument = startupDB[collectionId].data[item.id] || { id: item.id }
         const document = <DBDataObject>tools.deepCopy(startupDB[collectionId].data[item.id] || { id: item.id })
         let patchedDocument = document
         try {
             if (typeof addTimeStamps == 'function') addTimeStamps('modified_patch', patchedDocument, document, item)
             if (item.patch) {
-                jsonPatch.applyPatch(document, item.patch).newDocument
+                patchedDocument = jsonPatch.applyPatch(document, item.patch).newDocument
             } else patchedDocument = Object.assign(patchedDocument, item)
         } catch (err) {
             return { statusCode: 400, message: { error: 'Invalid patch', errorId: 'SYtSsvvMlKiE' } }
@@ -176,6 +177,11 @@ crud.patch = function (operation: Operation, collectionId: string, db: DBConfig,
         if (typeof db.options.validator == 'function') {
             const errors = validateDocuments(db.options.validator, operation.collection, patchedDocument)
             if (errors.statusCode > 0) return errors
+            if (item.patch && patchedDocument.__validatorMutated) {
+                const refreshedPatch = jsonPatch.compare(originalDocument, patchedDocument)
+                item.patch = refreshedPatch
+                delete patchedDocument.__validatorMutated
+            }
         }
         startupDB[collectionId].data[item.id] = patchedDocument
         // If length is not given, calculate dynamically

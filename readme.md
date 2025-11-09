@@ -134,6 +134,28 @@ Your function should implement the following interface:
 validator(collection, documents)
 ```
 
+StartupDB treats validator functions as a last chance to shape the payload before it is copied in-memory and written to the oplog. This means a validator may mutate the documents it receives. That pattern is useful for declarative concerns such as:
+
+-   auto-filling defaults that depend on other fields;
+-   applying per-tenant transformations (e.g. locale normalisation);
+-   encrypting sensitive values before they leave the HTTP request body.
+
+When you need to modify data (for example, replacing a plaintext secret with its ciphertext), make sure your validator or custom Ajv keyword mutates the original object passed in. StartupDB captures those mutations, so both the persisted checkpoint and the oplog contain the transformed values. JSON Patch payloads are handled too: if the validator changes the materialised document, StartupDB regenerates the patch before appending the entry to the oplog, keeping encrypted data out of the log.
+
+##### JSON Patch helpers
+
+When you rely on JSON Patch requests (`PATCH` with a `patch` array), it is helpful to mark any patch entry that your validator mutates so StartupDB knows the original patch needs to be rebuilt. You can do this by setting a flag—`__validatorMutated = true` is the convention we support—on the patch object while you are inside the validator or custom Ajv keyword:
+
+```
+function encryptKeyword(data, ctx) {
+    ctx.parentData.value = encrypt(data)        // mutate the value
+    ctx.parentData.__validatorMutated = true    // signal that StartupDB should regenerate the patch
+    return true
+}
+```
+
+StartupDB will detect this flag, recompute the patch from the post-validation document, and strip the helper property before persisting or logging. If you do not set the flag, the original patch is kept verbatim.
+
 #### Timestamps
 
 startupDB can auto-timestamp your documents using the `options.addTimeStamps` function.
