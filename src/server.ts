@@ -197,6 +197,11 @@ crud.patch = function (operation: Operation, collectionId: string, db: DBConfig,
         if (typeof db.options.validator == 'function') {
             const errors = validateDocuments(db.options.validator, operation.collection, patchedDocument)
             if (errors.statusCode > 0) return errors
+            if (item.patch && item.__validatorMutated) {
+                const refreshedPatch = jsonPatch.compare(document, patchedDocument)
+                item.patch = refreshedPatch
+                delete item.__validatorMutated
+            }
         }
         startupDB[collectionId].data[item.id] = patchedDocument
         // If length is not given, calculate dynamically
