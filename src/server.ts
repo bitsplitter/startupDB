@@ -734,7 +734,10 @@ const processMethod = async function (
         if (response.statusCode > 200) return res.status(response.statusCode).send(response.message)
         if (query['fromOpLogId']) return await sendOpLog(req, res, next, parseInt(query['fromOpLogId']))
     } catch (e) {
-        console.log('STARTUPDB Error', e)
+        console.error('STARTUPDB Error payload:', e?.response?.data?.error)
+        console.error('STARTUPDB Full payload:', e?.response?.data)
+        console.error('STARTUPDB Message:', e?.message)
+        console.error('STARTUPDB Stack:', e?.stack)
         if (typeof req.startupDB.options.sentry?.captureException == 'function') req.startupDB.options.sentry.captureException(e)
         return res.status(500).send('')
     }
