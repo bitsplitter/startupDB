@@ -234,38 +234,54 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
         startupDB[collectionId].lastAccessed = new Date().getTime()
     }
     const release = await mutex.acquire()
-    // We got the lock so we know we're the only one running this code now.
-    // First check if the data we're after isn't already there (then someone else had the lock first and finished the work and we don't do anything)
-    // Under high load, startupDB[collectionId] sometimes does not exist. startupDBGC might have kicked it out so we check here for !startupDB[collectionId]
-    if (!startupDB[collectionId] || (!startupDB[collectionId].loading && !startupDB[collectionId].finishedLoading)) {
-        debugLogger('Locked ' + collection)
-        try {
-            const ndJsononObject = await persist.readCheckpointFromStream(dataDirectory, 'latest.ndjson', db)
-            if (ndJsononObject.savedAt) {
-                startupDB[collectionId] = ndJsononObject
-                startupDB[collectionId].length = ndJsononObject.totalBytes
+    let finishedLoading = false
+    try {
+        // We got the lock so we know we're the only one running this code now.
+        // First check if the data we're after isn't already there (then someone else had the lock first and finished the work and we don't do anything)
+        // Under high load, startupDB[collectionId] sometimes does not exist. startupDBGC might have kicked it out so we check here for !startupDB[collectionId]
+        if (!startupDB[collectionId] || (!startupDB[collectionId].loading && !startupDB[collectionId].finishedLoading)) {
+            debugLogger('Locked ' + collection)
+
+            startupDB[collectionId].lock = mutex
+            startupDB[collectionId].loading = true
+            startupDB[collectionId].finishedLoading = false
+            startupDB[collectionId].lastAccessed = new Date().getTime()
+
+            try {
+                const ndJsononObject = await persist.readCheckpointFromStream(dataDirectory, 'latest.ndjson', db)
+                if (ndJsononObject.savedAt) {
+                    startupDB[collectionId] = ndJsononObject
+                    startupDB[collectionId].length = ndJsononObject.totalBytes
+                }
+            } catch (err: any) {
+                if (err?.code == 'ENOENT') {
+                    // Pretend that there is an empty collection
+                    startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
+                } else {
+                    // Non-ENOENT checkpoint load errors are treated as transient storage failures.
+                    // Returning empty data here can lead to an empty checkpoint being created later.
+                    err.statusCode = 503
+                    throw err
+                }
             }
-        } catch (err) {
-            if (err.code == 'ENOENT') {
-                // Pretend that there is an empty collection
-                startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
-            }
+
+            startupDB[collectionId].lock = mutex
+            usedBytesInMemory += startupDB[collectionId].length
+            await processOplog(collection, db, 0, function (operation: Operation, length: number) {
+                applyCRUDoperation(operation, collection, db, length)
+            })
+        } else {
+            debugLogger('Locked... no need to retrieve', collection)
         }
-        startupDB[collectionId].lock = mutex
-        startupDB[collectionId].loading = true
-        startupDB[collectionId].finishedLoading = false
-        startupDB[collectionId].lastAccessed = new Date().getTime()
-        usedBytesInMemory += startupDB[collectionId].length
-        await processOplog(collection, db, 0, function (operation: Operation, length: number) {
-            applyCRUDoperation(operation, collection, db, length)
-        })
-    } else {
-        debugLogger('Locked... no need to retrieve', collection)
+        finishedLoading = true
+    } finally {
+        if (startupDB[collectionId]) {
+            startupDB[collectionId].loading = false
+            startupDB[collectionId].finishedLoading = finishedLoading
+        }
+        release() // Release the lock!
+        debugLogger('Released ' + collection)
     }
-    startupDB[collectionId].loading = false
-    startupDB[collectionId].finishedLoading = true
-    release() // Release the lock!
-    debugLogger('Released ' + collection)
 }
 
 const loadCollection = async function (db: DBConfig, collection: string): Promise<boolean> {
@@ -336,7 +352,7 @@ const executeDBAcommand = async function (req: Req, res: Res, next: NextFunction
         for (const afterFn of postHooks) response = await afterFn(req, response)
         return res.send(response)
     } catch (e) {
-        return res.status(500).send('')
+        return res.status(e?.statusCode || 500).send('')
     }
 }
 /**
@@ -663,7 +679,7 @@ const processMethod = async function (req: Req, res: Res, next: NextFunction, co
         console.error('STARTUPDB Message:', e?.message)
         console.error('STARTUPDB Stack:', e?.stack)
         if (typeof req.startupDB.options.sentry?.captureException == 'function') req.startupDB.options.sentry.captureException(e)
-        return res.status(500).send('')
+        return res.status(e?.statusCode || 500).send('')
     }
     if (!req.startupDB.options?.streamObjects || !response.data || typeof response.data == 'string') return res.send(response.data)
     res.set('Content-Type', 'application/json')
