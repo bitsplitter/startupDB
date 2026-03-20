@@ -241,7 +241,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
         // Under high load, startupDB[collectionId] sometimes does not exist. startupDBGC might have kicked it out so we check here for !startupDB[collectionId]
         if (!startupDB[collectionId] || (!startupDB[collectionId].loading && !startupDB[collectionId].finishedLoading)) {
             debugLogger('Locked ' + collection)
-
+            if (!startupDB[collectionId]) startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
             startupDB[collectionId].lock = mutex
             startupDB[collectionId].loading = true
             startupDB[collectionId].finishedLoading = false
