@@ -22,17 +22,55 @@ function readdirRecursive(dirName: string) {
     readdirRecursive2(dirName)
     return list
 }
-const rename = function (newFile: string, oldFile: string, db: DBConfig) {
-    let x
+const readdir = async function (dirName: string, db: DBConfig) {
     try {
-        db.options.secondaryDataDirs?.forEach((rootDir) => {
-            fs.renameSync(path.join(rootDir, newFile), path.join(rootDir, oldFile))
-        })
-        x = fs.renameSync(path.join(db.dataFiles, newFile), path.join(db.dataFiles, oldFile))
+        return await fs.readdir(path.join(db.dataFiles, dirName))
     } catch (e) {
-        console.log('@ERROR', e)
+        return []
     }
-    return x
+}
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+// Windows can fail renames/deletes with transient sharing violations when another process (or an AV scanner) holds the file open.
+const RETRYABLE_FS_ERRORS = ['EPERM', 'EBUSY', 'EACCES']
+const renameWithRetry = async function (oldPath: string, newPath: string) {
+    let delay = 50
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await fs.rename(oldPath, newPath)
+        } catch (err) {
+            if (attempt >= 4 || !RETRYABLE_FS_ERRORS.includes(err.code)) throw err
+            await sleep(delay)
+            delay *= 2
+        }
+    }
+}
+const rename = async function (oldFile: string, newFile: string, db: DBConfig) {
+    for (const rootDir of db.options.secondaryDataDirs || []) {
+        try {
+            await renameWithRetry(path.join(rootDir, oldFile), path.join(rootDir, newFile))
+        } catch (err) {
+            // Not all files are mirrored to secondary dirs
+            if (err.code != 'ENOENT') throw err
+        }
+    }
+    return await renameWithRetry(path.join(db.dataFiles, oldFile), path.join(db.dataFiles, newFile))
+}
+/**
+ * Atomically replace fileName with tmpFile (both relative to the data root(s)).
+ * The target file never ceases to exist: it either holds its old or its new content.
+ */
+const replaceFile = async function (tmpFile: string, fileName: string, db: DBConfig) {
+    return await rename(tmpFile, fileName, db)
+}
+const copyFile = async function (srcFile: string, destFile: string, db: DBConfig) {
+    for (const rootDir of db.options.secondaryDataDirs || []) {
+        try {
+            await fs.copyFile(path.join(rootDir, srcFile), path.join(rootDir, destFile))
+        } catch (e) {
+            // Don't panic
+        }
+    }
+    return await fs.copyFile(path.join(db.dataFiles, srcFile), path.join(db.dataFiles, destFile))
 }
 const archive = async function (fileName: string, archiveFileName: string, db: DBConfig) {
     const archiveDir = db.options.opLogArchive!
@@ -87,35 +125,40 @@ function drain(writer) {
 }
 
 async function writeCheckpointToStream(metaData: any, json: any, dirName: string, fileName: string, db: DBConfig) {
-    try {
-        db.options.secondaryDataDirs?.forEach((rootDir) => {
-            fs.ensureDirSync(path.join(rootDir, dirName))
-        })
-        fs.ensureDirSync(path.join(db.dataFiles, dirName))
-        const passthroughStream = new PassThrough()
+    db.options.secondaryDataDirs?.forEach((rootDir) => {
+        fs.ensureDirSync(path.join(rootDir, dirName))
+    })
+    fs.ensureDirSync(path.join(db.dataFiles, dirName))
+    const passthroughStream = new PassThrough()
 
-        const secondaryFileNames = db.options.secondaryDataDirs?.map((rootDir) => path.join(rootDir, dirName, fileName))
-        const writer = fs.createWriteStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, flags: 'w' })
-        const secondaryStreams = secondaryFileNames?.map((fileName) => fs.createWriteStream(fileName))
-        passthroughStream.pipe(writer)
-
-        secondaryStreams?.forEach((stream) => {
-            passthroughStream.pipe(stream)
-        })
-        if (!passthroughStream.write(JSON.stringify(metaData) + '\n')) await drain(passthroughStream)
-        if (Array.isArray(json)) {
-            for (const obj of json) if (!passthroughStream.write(JSON.stringify(obj) + '\n')) await drain(passthroughStream)
-        } else {
-            for (const obj of Object.values(json)) if (!passthroughStream.write(JSON.stringify(obj) + '\n')) await drain(passthroughStream)
-        }
-        writer.end()
-        passthroughStream.end()
-        secondaryStreams?.forEach((stream) => {
-            stream.end()
-        })
-    } catch (err) {
-        console.log(err)
+    const secondaryFileNames = db.options.secondaryDataDirs?.map((rootDir) => path.join(rootDir, dirName, fileName))
+    const writer = fs.createWriteStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, flags: 'w' })
+    const secondaryStreams = secondaryFileNames?.map((fileName) => fs.createWriteStream(fileName)) || []
+    // Propagate write errors to the caller and only return when all writers have flushed to disk
+    const finished = Promise.all(
+        [writer, ...secondaryStreams].map(
+            (stream) =>
+                new Promise<void>((resolve, reject) => {
+                    stream.once('error', reject)
+                    stream.once('finish', () => resolve())
+                })
+        )
+    )
+    passthroughStream.pipe(writer)
+    secondaryStreams.forEach((stream) => {
+        passthroughStream.pipe(stream)
+    })
+    const writeOrDrain = async function (payload: string) {
+        if (!passthroughStream.write(payload)) await Promise.race([drain(passthroughStream), finished])
     }
+    await writeOrDrain(JSON.stringify(metaData) + '\n')
+    if (Array.isArray(json)) {
+        for (const obj of json) await writeOrDrain(JSON.stringify(obj) + '\n')
+    } else {
+        for (const obj of Object.values(json)) await writeOrDrain(JSON.stringify(obj) + '\n')
+    }
+    passthroughStream.end() // ends all piped destination streams as well
+    await finished
 }
 
 async function readCheckpointFromStream(dirName: string, fileName: string, db: DBConfig): Promise<any> {
@@ -206,11 +249,14 @@ const appendFile = async function (dirName: string, fileName: string, payload: s
 export default {
     archive,
     appendFile,
+    copyFile,
     existsSync,
     fileStats,
     processOplog,
+    readdir,
     readdirRecursive,
     rename,
+    replaceFile,
     rmdirSync,
     writeCheckpointToStream,
     readCheckpointFromStream,

@@ -2,6 +2,7 @@ import v8 from 'v8'
 import { Req, Res, DBResponse, DBDataObject, DBOptions, DBConfig, Operation, CollectionOfObjects, Database, ArrayOfDBDataObjects, SomeFunctions } from './types'
 import { NextFunction } from 'express'
 import path from 'path'
+import { pipeline } from 'stream'
 import { compileExpression } from 'filtrex'
 import { v4 as uuidv4 } from 'uuid'
 import jsonPatch from 'fast-json-patch'
@@ -252,6 +253,15 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
                 if (ndJsononObject.savedAt) {
                     startupDB[collectionId] = ndJsononObject
                     startupDB[collectionId].length = ndJsononObject.totalBytes
+                } else {
+                    // The latest checkpoint is missing or has no header. If archived checkpoints exist, a flush did
+                    // not complete: treating this as an empty collection would lose data when the next flush overwrites it.
+                    const checkpointFiles = await persist.readdir(dataDirectory, db)
+                    if (checkpointFiles.some((file: string) => /^\d{14}_\d+\.ndjson(\.gz)?$/.test(file))) {
+                        const err: any = new Error('Latest checkpoint missing or unreadable while archived checkpoints exist for ' + collection)
+                        err.statusCode = 503
+                        throw err
+                    }
                 }
             } catch (err: any) {
                 if (err?.code == 'ENOENT') {
@@ -325,7 +335,9 @@ const startupDBGC = function (options: any): number {
     let indexOfCollectionToDelete = 0
     do {
         const collectionToDelete = orderedCollections[indexOfCollectionToDelete++]?.collection
-        if (collectionToDelete && startupDB[collectionToDelete]?.data) {
+        // Skip collections with a locked mutex: deleting one also deletes its lock, which would
+        // let other operations enter the critical section an in-flight flush/init still occupies
+        if (collectionToDelete && startupDB[collectionToDelete]?.data && !startupDB[collectionToDelete].lock?.isLocked?.()) {
             usedBytesInMemory -= startupDB[collectionToDelete].length
             delete startupDB[collectionToDelete]
             deletedCollections++
@@ -457,10 +469,11 @@ const getRawCheckpoint = function (req: Req, res: Res, next: NextFunction, colle
     const dataDirectory = './checkpoint/' + collection
     if (fileName.includes('.gz')) res.set('Content-Encoding', 'gzip')
     res.set('Content-Type', 'application/x-ndjson')
-    const checkpointStream = fs.createReadStream(path.join(db.dataFiles, dataDirectory, fileName))
-    checkpointStream.pipe(res)
-    req.on('aborted', () => checkpointStream.destroy())
-    res.on('close', () => checkpointStream.destroy())
+    // pipeline (unlike pipe) destroys the read stream when the response closes prematurely or errors,
+    // so disconnecting clients cannot leak file handles that keep the checkpoint 'in use'
+    pipeline(fs.createReadStream(path.join(db.dataFiles, dataDirectory, fileName)), res, (err) => {
+        if (err) debugLogger('Error streaming checkpoint', '' + err)
+    })
     return
 }
 const rawCheckpointExists = async function (req: Req, res: Res, next: NextFunction, collection: string, fileName: string) {
