@@ -1,3 +1,4 @@
+import { Mutex, MutexInterface } from 'async-mutex'
 import { Req, DBConfig, FlushCommandParams, CreateCommandParams, DropCommandParams, PurgeCommandParams, SimpleCommandParams } from './types'
 import persist from './persistence'
 import tools from './tools'
@@ -35,49 +36,86 @@ const flush = async function (req: Req, commandParameters: FlushCommandParams, {
     const dataFiles = req.startupDB.dataFiles
     const collectionId = dataFiles + '/' + collection
     if (!startupDB[collectionId]?.data) await initStartupDB(req.startupDB, collection)
-    const oldCheckPoint = startupDB[collectionId].checkPoint
-    const newCheckPoint = startupDB[collectionId].nextOpLogId - 1
-    if (oldCheckPoint > 0 && persist.existsSync('./checkpoint/' + collection + '/latest' + fileType, req.startupDB))
+
+    let mutex: MutexInterface = startupDB[collectionId]?.lock
+    if (!mutex?.acquire) {
+        mutex = new Mutex()
+        startupDB[collectionId].lock = mutex
+    }
+    const release = await mutex.acquire()
+    try {
+        const oldCheckPoint = startupDB[collectionId].checkPoint
+        const newCheckPoint = startupDB[collectionId].nextOpLogId - 1
+        const checkpointDir = './checkpoint/' + collection
+        const latestFile = checkpointDir + '/latest' + fileType
+        const tmpFile = latestFile + '.tmp'
+
+        // If memory says "never checkpointed" while numbered checkpoints exist on disk, this collection was
+        // (re)loaded from a missing/incomplete latest checkpoint. Flushing now would overwrite the latest
+        // checkpoint with (near) empty data and clear the oplog, so refuse.
+        if (oldCheckPoint == 0) {
+            const checkpointFiles = await persist.readdir(checkpointDir, req.startupDB)
+            if (checkpointFiles.some((file: string) => /^\d+\.(json|ndjson)(\.gz)?$/.test(file)))
+                return { statusCode: 500, message: { error: 'Refusing to overwrite checkpoint: no checkpoint in memory but numbered checkpoints exist on disk', errorId: 'kQ2vNxR8mEpz' } }
+        }
+
+        // Write the new checkpoint to a temporary file first so the latest checkpoint never ceases to exist.
+        const savedAt = new Date()
+        if (fileType == '.ndjson') {
+            const json = startupDB[collectionId]
+            const ndJsonHeader = {
+                options: json.options,
+                lastAccessed: json.lastAccessed,
+                lastModified: json.lastModified,
+                data: Array.isArray(json.data) ? [] : {},
+                checkPoint: newCheckPoint,
+                nextOpLogId: json.nextOpLogId,
+                savedAt: savedAt,
+                dbEngine: '2.0',
+            }
+            try {
+                await persist.writeCheckpointToStream(ndJsonHeader, json.data, checkpointDir, 'latest.ndjson.tmp', req.startupDB)
+            } catch (err) {
+                debugLogger(err)
+                return { statusCode: 500, message: { error: 'Cannot save checkpoint', errorId: 'Wms3x0goxHni' } }
+            }
+        } else {
+            let bufferToPersist = ''
+            try {
+                bufferToPersist = JSON.stringify({ ...startupDB[collectionId], checkPoint: newCheckPoint, savedAt: savedAt })
+            } catch (err) {
+                debugLogger(err)
+                return { statusCode: 500, message: { error: 'Cannot serialize checkpoint, object too large?', errorId: 'RKdCqPkPyr7p' } }
+            }
+
+            try {
+                await persist.writeFile(checkpointDir, 'latest' + fileType + '.tmp', bufferToPersist, req.startupDB)
+            } catch (err) {
+                debugLogger(err)
+                return { statusCode: 500, message: { error: 'Cannot save checkpoint', errorId: 'Wms3x0goxHni' } }
+            }
+        }
+
+        // Preserve the current checkpoint under its number (copy, not rename), then atomically replace it.
+        // On failure the old checkpoint is still intact and no in-memory state has changed.
         try {
-            persist.rename('./checkpoint/' + collection + '/latest' + fileType, './checkpoint/' + collection + '/' + oldCheckPoint + fileType, req.startupDB)
+            if (oldCheckPoint > 0 && persist.existsSync(latestFile, req.startupDB))
+                await persist.copyFile(latestFile, checkpointDir + '/' + oldCheckPoint + fileType, req.startupDB)
+            await persist.replaceFile(tmpFile, latestFile, req.startupDB)
         } catch (err) {
+            debugLogger(err)
             return { statusCode: 500, message: { error: 'Unable to rename checkpoint', errorId: '2aH6sQe0Ojkc' } }
         }
 
-    startupDB[collectionId].checkPoint = newCheckPoint
-    startupDB[collectionId].savedAt = new Date()
-    let bufferToPersist = ''
-    if (fileType == '.ndjson') {
-        const json = startupDB[collectionId]
-        const ndJsonHeader = {
-            options: json.options,
-            lastAccessed: json.lastAccessed,
-            lastModified: json.lastModified,
-            data: Array.isArray(json.data) ? [] : {},
-            checkPoint: json.checkPoint,
-            nextOpLogId: json.nextOpLogId,
-            savedAt: json.savedAt,
-            dbEngine: '2.0',
-        }
-        await persist.writeCheckpointToStream(ndJsonHeader, json.data, './checkpoint/' + collection, 'latest.ndjson', req.startupDB)
-    } else {
-        try {
-            bufferToPersist = JSON.stringify(startupDB[collectionId])
-        } catch (err) {
-            debugLogger(err)
-            return { statusCode: 500, message: { error: 'Cannot serialize checkpoint, object too large?', errorId: 'RKdCqPkPyr7p' } }
-        }
-
-        try {
-            await persist.writeFile('./checkpoint/' + collection, 'latest.json', bufferToPersist, req.startupDB)
-        } catch (err) {
-            debugLogger(err)
-            return { statusCode: 500, message: { error: 'Cannot save checkpoint', errorId: 'Wms3x0goxHni' } }
-        }
+        // Only commit in-memory state after the new checkpoint is durably in place.
+        startupDB[collectionId].checkPoint = newCheckPoint
+        startupDB[collectionId].savedAt = savedAt
+        if (req.startupDB.options.opLogArchive != undefined && archive == true) await moveOpLog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
+        else await clearOplog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
+        return { response: 'OK' }
+    } finally {
+        release()
     }
-    if (req.startupDB.options.opLogArchive != undefined && archive == true) await moveOpLog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
-    else await clearOplog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
-    return { response: 'OK' }
 }
 const create = async function (req: Req, commandParameters: CreateCommandParams, { startupDB }) {
     const collection = commandParameters.collection

@@ -13,10 +13,10 @@ const writeFileSync = function (dirName: string, fileName: string, payload: stri
     fs.writeFileSync(path.join(db.dataFiles, dirName, fileName), payload, 'utf8')
 }
 const writeFile = async function (dirName: string, fileName: string, payload: string, db: DBConfig) {
-    db.options.secondaryDataDirs?.forEach((rootDir) => {
-        fs.ensureDirSync(path.join(rootDir, dirName))
-        fs.writeFile(path.join(rootDir, dirName, fileName), payload, 'utf8')
-    })
+    for (const rootDir of db.options.secondaryDataDirs || []) {
+        await fs.ensureDir(path.join(rootDir, dirName))
+        await fs.writeFile(path.join(rootDir, dirName, fileName), payload, 'utf8')
+    }
     fs.ensureDirSync(path.join(db.dataFiles, dirName))
     return await fs.writeFile(path.join(db.dataFiles, dirName, fileName), payload, 'utf8')
 }
@@ -48,11 +48,51 @@ function readdirRecursive(dirName: string) {
     readdirRecursive2(dirName)
     return list
 }
-const rename = function (newFile: string, oldFile: string, db: DBConfig) {
+const rename = function (oldFile: string, newFile: string, db: DBConfig) {
     db.options.secondaryDataDirs?.forEach((rootDir) => {
-        fs.renameSync(path.join(rootDir, newFile), path.join(rootDir, oldFile))
+        fs.renameSync(path.join(rootDir, oldFile), path.join(rootDir, newFile))
     })
-    return fs.renameSync(path.join(db.dataFiles, newFile), path.join(db.dataFiles, oldFile))
+    return fs.renameSync(path.join(db.dataFiles, oldFile), path.join(db.dataFiles, newFile))
+}
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+// Windows can fail renames/deletes with transient sharing violations when another process (or an AV scanner) holds the file open.
+const RETRYABLE_FS_ERRORS = ['EPERM', 'EBUSY', 'EACCES']
+const renameWithRetry = async function (oldPath: string, newPath: string) {
+    let delay = 50
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await fs.rename(oldPath, newPath)
+        } catch (err) {
+            if (attempt >= 4 || !RETRYABLE_FS_ERRORS.includes(err.code)) throw err
+            await sleep(delay)
+            delay *= 2
+        }
+    }
+}
+/**
+ * Atomically replace fileName with tmpFile (both relative to the data root(s)).
+ * The target file never ceases to exist: it either holds its old or its new content.
+ */
+const replaceFile = async function (tmpFile: string, fileName: string, db: DBConfig) {
+    for (const rootDir of db.options.secondaryDataDirs || []) {
+        try {
+            await renameWithRetry(path.join(rootDir, tmpFile), path.join(rootDir, fileName))
+        } catch (err) {
+            // Not all file types are mirrored to secondary dirs (e.g. ndjson checkpoints)
+            if (err.code != 'ENOENT') throw err
+        }
+    }
+    return await renameWithRetry(path.join(db.dataFiles, tmpFile), path.join(db.dataFiles, fileName))
+}
+const copyFile = async function (srcFile: string, destFile: string, db: DBConfig) {
+    for (const rootDir of db.options.secondaryDataDirs || []) {
+        try {
+            await fs.copyFile(path.join(rootDir, srcFile), path.join(rootDir, destFile))
+        } catch (e) {
+            // Don't panic
+        }
+    }
+    return await fs.copyFile(path.join(db.dataFiles, srcFile), path.join(db.dataFiles, destFile))
 }
 const archive = async function (fileName: string, db: DBConfig) {
     const archiveDir = db.options.opLogArchive!
@@ -71,15 +111,15 @@ const archive = async function (fileName: string, db: DBConfig) {
     return
 }
 const remove = async function (fileName: string, db: DBConfig) {
-    db.options.secondaryDataDirs?.forEach((rootDir) => {
+    for (const rootDir of db.options.secondaryDataDirs || []) {
         try {
-            fs.unlinkSync(path.join(rootDir, fileName))
+            await fs.unlink(path.join(rootDir, fileName))
         } catch (e) {
             // Don't panic
         }
-    })
+    }
     try {
-        await fs.unlinkSync(path.join(db.dataFiles, fileName))
+        await fs.unlink(path.join(db.dataFiles, fileName))
     } catch (e) {
         // Don't panic
     }
@@ -132,20 +172,25 @@ function drain(writer) {
 }
 
 async function writeCheckpointToStream(metaData: any, json: any, dirName: string, fileName: string, db: DBConfig) {
-    try {
-        fs.ensureDirSync(path.join(db.dataFiles, dirName))
+    fs.ensureDirSync(path.join(db.dataFiles, dirName))
 
-        const writer = fs.createWriteStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, flags: 'a' })
-        if (!writer.write(JSON.stringify(metaData) + '\n')) await drain(writer)
-        if (Array.isArray(json)) {
-            for (const obj of json) if (!writer.write(JSON.stringify(obj) + '\n')) await drain(writer)
-        } else {
-            for (const obj of Object.values(json)) if (!writer.write(JSON.stringify(obj) + '\n')) await drain(writer)
-        }
-        writer.end()
-    } catch (err) {
-        console.log(err)
+    // 'w' (not 'a'): a leftover file from a previously failed write must not be appended to
+    const writer = fs.createWriteStream(path.join(db.dataFiles, dirName, fileName), { highWaterMark: highWaterMark, flags: 'w' })
+    const finished = new Promise<void>((resolve, reject) => {
+        writer.once('error', reject)
+        writer.once('finish', () => resolve())
+    })
+    const writeOrDrain = async function (payload: string) {
+        if (!writer.write(payload)) await Promise.race([drain(writer), finished])
     }
+    await writeOrDrain(JSON.stringify(metaData) + '\n')
+    if (Array.isArray(json)) {
+        for (const obj of json) await writeOrDrain(JSON.stringify(obj) + '\n')
+    } else {
+        for (const obj of Object.values(json)) await writeOrDrain(JSON.stringify(obj) + '\n')
+    }
+    writer.end()
+    await finished
 }
 
 async function readCheckpointFromStream(dirName: string, fileName: string, db: DBConfig): Promise<any> {
@@ -190,6 +235,7 @@ async function readCheckpointFromStream(dirName: string, fileName: string, db: D
 }
 export default {
     archive,
+    copyFile,
     existsSync,
     fileStats,
     mostRecentFile,
@@ -197,6 +243,7 @@ export default {
     readdirRecursive,
     readFile,
     rename,
+    replaceFile,
     remove,
     rmdirSync,
     writeFile,

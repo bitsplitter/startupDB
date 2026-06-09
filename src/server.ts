@@ -17,6 +17,7 @@ import {
 } from './types'
 import { NextFunction } from 'express'
 import path from 'path'
+import { pipeline } from 'stream'
 import { compileExpression } from 'filtrex'
 import { v4 as uuidv4 } from 'uuid'
 import jsonPatch from 'fast-json-patch'
@@ -303,6 +304,13 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
                 }
             } catch (err: any) {
                 if (err?.code == 'ENOENT') {
+                    // The latest checkpoint is missing. If numbered checkpoints exist, a flush did not complete:
+                    // treating this as an empty collection would lose data when the next flush overwrites it.
+                    const checkpointFiles = await persist.readdir(dataDirectory, db)
+                    if (checkpointFiles.some((file: string) => /^\d+\.(json|ndjson)(\.gz)?$/.test(file))) {
+                        err.statusCode = 503
+                        throw err
+                    }
                     // Pretend that there is an empty collection
                     startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
                 } else {
@@ -375,7 +383,9 @@ const startupDBGC = function (options: any): number {
     let indexOfCollectionToDelete = 0
     do {
         const collectionToDelete = orderedCollections[indexOfCollectionToDelete++]?.collection
-        if (collectionToDelete && startupDB[collectionToDelete]?.data) {
+        // Skip collections with a locked mutex: deleting one also deletes its lock, which would
+        // let other operations enter the critical section an in-flight flush/init still occupies
+        if (collectionToDelete && startupDB[collectionToDelete]?.data && !startupDB[collectionToDelete].lock?.isLocked?.()) {
             usedBytesInMemory -= startupDB[collectionToDelete].length
             delete startupDB[collectionToDelete]
             deletedCollections++
@@ -528,7 +538,11 @@ const getRawCheckpoint = function (req: Req, res: Res, next: NextFunction, colle
     if (fileName.includes('.gz')) res.set('Content-Encoding', 'gzip')
     if (fileName.includes('.ndjson')) res.set('Content-Type', 'application/x-ndjson')
     else res.set('Content-Type', 'application/json')
-    fs.createReadStream(path.join(db.dataFiles, dataDirectory, fileName)).pipe(res)
+    // pipeline (unlike pipe) destroys the read stream when the response closes prematurely,
+    // so disconnecting clients cannot leak file handles that keep the checkpoint 'in use'
+    pipeline(fs.createReadStream(path.join(db.dataFiles, dataDirectory, fileName)), res, (err) => {
+        if (err) debugLogger('Error streaming checkpoint', err)
+    })
     return
 }
 const rawCheckpointExists = async function (req: Req, res: Res, next: NextFunction, collection: string, fileName: string) {
