@@ -256,6 +256,23 @@ function(req, response){
 }
 ```
 
+### Hooks and streamed checkpoints or oplogs
+
+Checkpoints and oplogs are streamed to the client as stored on disk. They are never passed through 'after' hooks.
+
+| Request                                      | 'before' hooks | 'after' hooks |
+| -------------------------------------------- | -------------- | ------------- |
+| `GET /collection?returnType=checkpoint`      | run            | never run     |
+| `GET /collection?fromOpLogId={id}`           | run            | never run     |
+| `HEAD /collection`                           | never run      | never run     |
+| All other GET requests                       | run            | run           |
+
+This means:
+
+-   Use a `beforeGet` hook to decide **whether** a client may read a collection. Returning a status code >= 300 from a `beforeGet` hook blocks checkpoint and oplog requests as well.
+-   Do **not** rely on an `afterGet` hook to remove documents or fields a client is not allowed to see. A client can bypass it by requesting `?returnType=checkpoint` or `?fromOpLogId=0`. Oplog entries for deletes contain the complete deleted documents.
+-   If clients may only see part of a collection, store that part in a separate collection.
+
 ### Route parameters in hooks
 
 To define hooks for a specific route, one would add a middleware function before the catchall route like so:
