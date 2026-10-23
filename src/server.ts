@@ -667,7 +667,6 @@ const dbCreateObjects = async function (db: DBConfig, collection: string, payloa
 const processMethod = async function (req: Req, res: Res, next: NextFunction, collection: string, query: any, preHooks: Function[], method: Function, postHooks: Function[]) {
     let response = { statusCode: 0, data: {}, message: '', headers: {} }
     try {
-        debugger
         for (const beforeFn of preHooks) {
             response = await beforeFn(req, res, next, req.startupDB.collection)
             if (response?.statusCode >= 300) return res.status(response.statusCode).send(response.data)
