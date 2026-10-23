@@ -1308,6 +1308,50 @@ describe('Behaviour: expect GC after adding a lot of data', function () {
     })
 })
 
+describe('Behaviour: collection names that escape the data directory', function () {
+    it('POST to an encoded ../ collection should return a 400 and write nothing', function (done) {
+        request(app)
+            .post('/leesplank/..%2F..%2Fescaped')
+            .set('Content-type', 'application/json')
+            .send({ id: 'x' })
+            .expect(400)
+            .expect(function () {
+                assert.isFalse(fs.existsSync('./escaped'))
+            })
+            .end(done)
+    })
+    it('GET a collection containing a backslash should return a 400', function (done) {
+        request(app).get('/leesplank/..%5Cescaped?returnType=checkpoint').expect(400).end(done)
+    })
+    it('POST to a collection with a double slash should return a 400', function (done) {
+        request(app).post('/leesplank/parent//child').set('Content-type', 'application/json').send({ id: 'x' }).expect(400).end(done)
+    })
+    it('GET a collection with a trailing slash should return the same documents as without', function (done) {
+        request(app)
+            .get('/leesplank/origineel')
+            .expect(200)
+            .end(function (err, withoutSlash) {
+                if (err) return done(err)
+                request(app)
+                    .get('/leesplank/origineel/')
+                    .expect(200)
+                    .expect(function (res) {
+                        assert.deepEqual(res.body, withoutSlash.body)
+                    })
+                    .end(done)
+            })
+    })
+    it('GET a collection with a double trailing slash should return a 400', function (done) {
+        request(app).get('/leesplank/origineel//').expect(400).end(done)
+    })
+    it('drop command with a ../ collection should return a 400', function (done) {
+        request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'drop', collection: '../oplog' }).expect(400).end(done)
+    })
+    it('purgeOplog command with a ../ collection in the list should return a 400', function (done) {
+        request(app).post('/leesplank').set('Content-type', 'application/json').send({ command: 'purgeOplog', collection: 'array,../..' }).expect(400).end(done)
+    })
+})
+
 describe('Behaviour: get /', function () {
     it('should return list of all collections', function (done) {
         request(app)

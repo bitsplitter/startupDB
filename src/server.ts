@@ -346,9 +346,14 @@ const startupDBGC = function (options: any): number {
     return deletedCollections
 }
 
+const invalidCollectionName = () => ({ statusCode: 400, message: { error: 'Invalid collection name', errorId: 'Xr4tVq8LmZ2e' } })
+
 const dbExecuteDBAcommand = async function (req: Req, query: any, context: any) {
     const command = query.command
     if (command === undefined || !(command in dbaCommands)) return { statusCode: 400, message: { error: 'unknown command:' + command, errorId: '7WMWWvtJbE6P' } }
+    // purgeOplog and clearCache accept '*' or a comma separated list of collections
+    const collection = query.collection
+    if (collection && collection != '*' && !String(collection).split(',').every(tools.isValidCollectionName)) return invalidCollectionName()
     return await dbaCommands[command](req, query, context)
 }
 
@@ -757,26 +762,33 @@ const db = function (options: DBOptions) {
         } catch (err) {
             return res.sendStatus(400)
         }
-        req.startupDB.collection = req.url.split('?')[0].substring(1)
+        // Accept one trailing slash (/db/user/ == /db/user) so both forms share a single cached collection
+        req.startupDB.collection = req.url.split('?')[0].substring(1).replace(/\/$/, '')
+        if (!rootRoute && !tools.isValidCollectionName(req.startupDB.collection)) return res.sendStatus(400)
 
         // Define 'internal' CRUD functions that can be called from hooks functions
         req.startupDB.createObjects = async function (collection: string, payload: ArrayOfDBDataObjects) {
             if (options.readOnly) return res.sendStatus(403)
+            if (!tools.isValidCollectionName(collection)) return invalidCollectionName()
             return dbCreateObjects(req.startupDB, collection, tools.ensureArray(payload))
         }
         req.startupDB.getObjects = async function (collection: string, query) {
+            if (!tools.isValidCollectionName(collection)) return invalidCollectionName()
             return dbGetObjects(req.startupDB, collection, [], query)
         }
         req.startupDB.updateObjects = async function (collection: string, payload: ArrayOfDBDataObjects) {
             if (options.readOnly) return res.sendStatus(403)
+            if (!tools.isValidCollectionName(collection)) return invalidCollectionName()
             return dbUpdateObjects(req.startupDB, collection, tools.ensureArray(payload))
         }
         req.startupDB.deleteObjects = async function (collection: string, payload: ArrayOfDBDataObjects) {
             if (options.readOnly) return res.sendStatus(403)
+            if (!tools.isValidCollectionName(collection)) return invalidCollectionName()
             return dbDeleteObjects(req.startupDB, collection, tools.ensureArray(payload))
         }
         req.startupDB.patchObjects = async function (collection: string, payload: ArrayOfDBDataObjects) {
             if (options.readOnly) return res.sendStatus(403)
+            if (!tools.isValidCollectionName(collection)) return invalidCollectionName()
             return dbPatchObjects(req.startupDB, collection, tools.ensureArray(payload))
         }
         req.startupDB.executeDBAcommand = async function (payload: ArrayOfDBDataObjects) {
@@ -784,6 +796,7 @@ const db = function (options: DBOptions) {
         }
         req.startupDB.pullOplog = async function (collection: string, query) {
             if (!options.readOnly) return res.sendStatus(403) // pullOplog is for stateless secondary servers, not intended for use on statefull main server.
+            if (!tools.isValidCollectionName(collection)) return
             const db = req.startupDB
             const dataFiles = db.dataFiles
             const collectionId = dataFiles + '/' + collection

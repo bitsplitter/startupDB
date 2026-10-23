@@ -39,9 +39,19 @@ function yyyymmddhhmmss_ms(date): string {
         date.getMilliseconds()
     )
 }
+/*
+ * Collection names become directory names under dataFiles, so they must not be able to escape it
+ */
+function isValidCollectionName(collection: any): boolean {
+    if (typeof collection != 'string' || collection.length == 0) return false
+    if (collection.includes('\0') || collection.includes('\\')) return false
+    return collection.split('/').every((segment) => segment != '' && segment != '..')
+}
+
 export default {
     deepCopy,
     EMPTY_COLLECTION,
     ensureArray,
     yyyymmddhhmmss_ms,
+    isValidCollectionName,
 }
