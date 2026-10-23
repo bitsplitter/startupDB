@@ -24,8 +24,18 @@ function ensureArray(object: any): Array<any> {
     return object
 }
 
+/*
+ * Collection names become directory names under dataFiles, so they must not be able to escape it
+ */
+function isValidCollectionName(collection: any): boolean {
+    if (typeof collection != 'string' || collection.length == 0) return false
+    if (collection.includes('\0') || collection.includes('\\')) return false
+    return collection.split('/').every((segment) => segment != '' && segment != '..')
+}
+
 export default {
     deepCopy,
     EMPTY_COLLECTION,
     ensureArray,
+    isValidCollectionName,
 }
