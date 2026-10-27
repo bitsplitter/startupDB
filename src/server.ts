@@ -354,21 +354,36 @@ const writeOperationToOpLog = async function (operation: Operation, db: DBConfig
     const dataFiles = db.dataFiles
     const collection = operation.collection
     const collectionId = dataFiles + '/' + collection
-    const oplogId = startupDB[collectionId].nextOpLogId++
-    const date = new Date()
-    const unixTimestamp = date.getTime()
-    const timestamp = logDateFormat(date)
-
-    operation.opLogId = oplogId
-    operation.timestamp = {
-        unixTimeStamp: unixTimestamp,
-        timeStamp: timestamp,
-    }
     const mutex: MutexInterface = startupDB[collectionId]?.lock
     const release = await mutex.acquire()
-
-    await persist.writeFile('./oplog/' + collection, oplogId + '.json', JSON.stringify(operation), db)
-    release()
+    try {
+        // The id is taken inside the lock and only consumed after the file has been written:
+        // a failed write leaves no gap, and nobody else can pick the same id in the meantime.
+        const entry = startupDB[collectionId]
+        if (!entry) throw Object.assign(new Error(`Collection ${collection} left the cache while writing to the oplog`), { statusCode: 500 })
+        const oplogId = entry.nextOpLogId
+        const date = new Date()
+        operation.opLogId = oplogId
+        operation.timestamp = {
+            unixTimeStamp: date.getTime(),
+            timeStamp: logDateFormat(date),
+        }
+        try {
+            // Never overwrite an oplog file. If <oplogId>.json exists, our idea of the next id is wrong, whatever the reason.
+            await persist.writeNewFile('./oplog/' + collection, oplogId + '.json', JSON.stringify(operation), db)
+        } catch (err) {
+            if (err?.code == persist.OPLOG_FILE_EXISTS) {
+                // The id is not consumed, so every retry hits the same file and fails again until the cause is gone.
+                // The log is the feedback: repeated rejections tell us the problem is still there.
+                console.error(`STARTUPDB OPLOG CONFLICT: write rejected, collectionId ${collectionId}, oplogId ${oplogId}`)
+            }
+            if (err && typeof err == 'object' && !err.statusCode) err.statusCode = 500
+            throw err
+        }
+        entry.nextOpLogId = oplogId + 1
+    } finally {
+        release()
+    }
 }
 
 const startupDBGC = function (options: any): number {
@@ -687,7 +702,23 @@ const dbPatchObjects = async function (db: DBConfig, collection: string, payload
     } catch (e) {
         return { statusCode: 400, message: { error: 'Could not apply all patches', errorId: 'PUpDKuw4NqyU' } }
     }
-    await writeOperationToOpLog(operation, db)
+    // The patch is already applied in memory. If the oplog write fails (a rejected duplicate id, disk error) the client gets an error,
+    // so the patch must not stay behind in memory: it would be served and checkpointed without ever having been persisted.
+    const applied = payload.map((item) => startupDB[collectionId].data[item.id])
+    try {
+        await writeOperationToOpLog(operation, db)
+    } catch (err) {
+        const data = startupDB[collectionId]?.data
+        if (data) {
+            payload.forEach((item, i) => {
+                if (data[item.id] !== applied[i]) return // modified by someone else in the meantime, leave it alone
+                const previous = oldData.find((old) => old.id == item.id)
+                if (previous) data[item.id] = previous
+                else delete data[item.id]
+            })
+        }
+        throw err
+    }
     return { statusCode: 200, data: query?.returnType != 'tally' ? payload : { tally: payload.length } }
 }
 

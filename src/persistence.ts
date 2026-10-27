@@ -3,6 +3,7 @@ import { DBConfig } from './types'
 import fs from 'fs-extra'
 import path from 'path'
 const highWaterMark = 64 * 1024
+const OPLOG_FILE_EXISTS = 'OPLOG_FILE_EXISTS'
 
 const writeFileSync = function (dirName: string, fileName: string, payload: string, db: DBConfig) {
     db.options.secondaryDataDirs?.forEach((rootDir) => {
@@ -20,6 +21,97 @@ const writeFile = async function (dirName: string, fileName: string, payload: st
     fs.ensureDirSync(path.join(db.dataFiles, dirName))
     return await fs.writeFile(path.join(db.dataFiles, dirName, fileName), payload, 'utf8')
 }
+const unlinkWithRetry = async function (file: string) {
+    let delay = 50
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await fs.unlink(file)
+        } catch (err) {
+            if (err.code == 'ENOENT') return
+            if (attempt >= 4 || !RETRYABLE_FS_ERRORS.includes(err.code)) throw err
+            await sleep(delay)
+            delay *= 2
+        }
+    }
+}
+
+/**
+ * Open a file for writing, failing when it already exists (O_CREAT | O_EXCL).
+ *
+ * EEXIST is final: an existing file is never opened, so it is never truncated or overwritten.
+ * EPERM/EBUSY/EACCES are retried because on Windows they are transient when an AV scanner/indexer
+ * holds a handle, or when a previous file with this name is still 'delete pending'. Retrying is safe:
+ * the exclusive open can never succeed on a file that exists.
+ * If the error persists we give up (and the caller fails the request), we never fall back to overwriting.
+ */
+const openNewFile = async function (file: string): Promise<number> {
+    let delay = 50
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await fs.open(file, 'wx')
+        } catch (err) {
+            if (err.code == 'EEXIST') {
+                const conflict: any = new Error(`Refusing to overwrite existing oplog file: ${file}`)
+                conflict.code = OPLOG_FILE_EXISTS
+                conflict.statusCode = 500
+                throw conflict
+            }
+            if (attempt >= 4 || !RETRYABLE_FS_ERRORS.includes(err.code)) throw err
+            await sleep(delay)
+            delay *= 2
+        }
+    }
+}
+
+const createNewFile = async function (file: string, payload: string) {
+    const fd = await openNewFile(file) // an error here means the file is not ours: never unlink it
+    try {
+        await fs.writeFile(fd, payload, 'utf8')
+    } catch (err) {
+        // The file is ours and incomplete. Remove it, a partial oplog file would poison this id.
+        try {
+            await fs.close(fd)
+        } catch {}
+        try {
+            await unlinkWithRetry(file)
+        } catch {}
+        throw err
+    }
+    try {
+        await fs.close(fd)
+    } catch (err) {
+        try {
+            await unlinkWithRetry(file)
+        } catch {}
+        throw err
+    }
+}
+
+/**
+ * Create a new file in the data dir and all secondary dirs. Never overwrites an existing file.
+ * The primary dir goes first: it is the one we read from, so it decides whether the id is free.
+ * When anything fails, the files created by this call are removed again (and only those).
+ * Throws an error with code OPLOG_FILE_EXISTS if the file already existed in one of the dirs.
+ */
+const writeNewFile = async function (dirName: string, fileName: string, payload: string, db: DBConfig) {
+    const created: string[] = []
+    try {
+        for (const rootDir of [db.dataFiles, ...(db.options.secondaryDataDirs || [])]) {
+            await fs.ensureDir(path.join(rootDir, dirName))
+            const file = path.join(rootDir, dirName, fileName)
+            await createNewFile(file, payload)
+            created.push(file)
+        }
+    } catch (err) {
+        for (const file of created) {
+            try {
+                await unlinkWithRetry(file)
+            } catch {}
+        }
+        throw err
+    }
+}
+
 const readFile = async function (dirName: string, fileName: string, db: DBConfig) {
     return await fs.readFile(path.join(db.dataFiles, dirName, fileName))
 }
@@ -239,6 +331,7 @@ export default {
     existsSync,
     fileStats,
     mostRecentFile,
+    OPLOG_FILE_EXISTS,
     readdir,
     readdirRecursive,
     readFile,
@@ -248,6 +341,7 @@ export default {
     rmdirSync,
     writeFile,
     writeFileSync,
+    writeNewFile,
     writeCheckpointToStream,
     readCheckpointFromStream,
 }
