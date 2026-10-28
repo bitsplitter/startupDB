@@ -912,17 +912,16 @@ const db = function (options: DBOptions) {
             return dbExecuteDBAcommand(req, payload, { usedBytesInMemory, startupDB, initStartupDB, startupDBGC })
         }
         req.startupDB.pullOplog = async function (collection: string): Promise<void> {
-            if (!options.readOnly) {
-                res.sendStatus(403) // pullOplog is for stateless secondary servers, not intended for use on statefull main server.
-                return
-            }
             if (!tools.isValidCollectionName(collection)) return
             const db = req.startupDB
             const dataFiles = db.dataFiles
             const collectionId = dataFiles + '/' + collection
-            if (!startupDB[collectionId]) return
-            await processOplog(collection, db, startupDB[collectionId].nextOpLogId - 1, function (operation: Operation, length: number) {
-                startupDB[collectionId].nextOpLogId = operation.opLogId + 1
+            // Secondary writers call this from hooks to apply oplog entries another process wrote to the shared folder.
+            if (!(await loadCollection(db, collection))) return
+            const entry = startupDB[collectionId]
+            if (!entry?.data) return
+            await processOplog(collection, db, entry.nextOpLogId - 1, function (operation: Operation, length: number) {
+                entry.nextOpLogId = operation.opLogId + 1
                 applyCRUDoperation(operation, db, length)
             })
         }
