@@ -222,15 +222,30 @@ describe('Oplog files are never overwritten', function () {
                 assert.deepStrictEqual(files(dataDir, collection), ['1.json', '2.json'])
             })
         }
+        it('EPERM while publishing the file is retried and then succeeds', async function () {
+            const collection = 'transientLink'
+            await post('plain', collection, { id: 'd1' }).expect(200)
+            let failures = 2
+            const restore = stub('link', (original) => async (source, target, ...rest) => {
+                if (String(target).endsWith('2.json') && failures-- > 0) throw errno('EPERM')
+                return original.call(fsx, source, target, ...rest)
+            })
+            try {
+                await post('plain', collection, { id: 'd2' }).expect(200)
+            } finally {
+                restore()
+            }
+            assert.deepStrictEqual(files(dataDir, collection), ['1.json', '2.json'])
+        })
         it('a persistent EPERM fails the request and never touches the existing file', async function () {
             const collection = 'persistentEperm'
             await post('plain', collection, { id: 'd1' }).expect(200)
             const existing = path.join(oplogDir(dataDir, collection), '2.json')
             fs.writeFileSync(existing, 'delete pending lookalike')
             const unlinked = []
-            const restoreOpen = stub('open', (original) => async (target, flags, ...rest) => {
-                if (flags == 'wx' && String(target).endsWith('2.json')) throw errno('EPERM')
-                return original.call(fsx, target, flags, ...rest)
+            const restoreLink = stub('link', (original) => async (source, target, ...rest) => {
+                if (String(target).endsWith('2.json')) throw errno('EPERM')
+                return original.call(fsx, source, target, ...rest)
             })
             const restoreUnlink = stub('unlink', (original) => async (target, ...rest) => {
                 unlinked.push(target)
@@ -239,11 +254,50 @@ describe('Oplog files are never overwritten', function () {
             try {
                 await post('plain', collection, { id: 'd2' }).expect(500)
             } finally {
-                restoreOpen()
+                restoreLink()
                 restoreUnlink()
             }
             assert.strictEqual(fs.readFileSync(existing, 'utf8'), 'delete pending lookalike')
-            assert.deepStrictEqual(unlinked, [], 'a file we did not create must never be removed')
+            assert.ok(
+                unlinked.every((file) => file.endsWith('.tmp')),
+                'a file we did not create must never be removed, only our own temporary file'
+            )
+            assert.deepStrictEqual(files(dataDir, collection), ['1.json', '2.json'], 'the temporary file is cleaned up')
+        })
+    })
+
+    describe('readers only see complete files', function () {
+        it('an oplog file is invisible until its content is completely written', async function () {
+            const collection = 'visibility'
+            await post('plain', collection, { id: 'd1' }).expect(200)
+            let releaseWrite
+            let writing
+            const writeStarted = new Promise((resolve) => (writing = resolve))
+            const restore = stub('writeFile', (original) => async (target, ...rest) => {
+                if (typeof target == 'number') {
+                    writing()
+                    await new Promise((resolve) => (releaseWrite = resolve))
+                }
+                return original.call(fsx, target, ...rest)
+            })
+            let pending
+            try {
+                pending = post('plain', collection, { id: 'd2' }).then((res) => res)
+                await writeStarted
+                assert.deepStrictEqual(
+                    files(dataDir, collection).filter((f) => f.endsWith('.json')),
+                    ['1.json'],
+                    'the file being written must not be visible as 2.json'
+                )
+                const res = await request(app).get(`/plain/${collection}?fromOpLogId=1`).expect(200)
+                assert.deepStrictEqual(res.body, [])
+            } finally {
+                releaseWrite?.()
+                restore()
+            }
+            assert.strictEqual((await pending).status, 200)
+            assert.deepStrictEqual(files(dataDir, collection), ['1.json', '2.json'], 'no temporary file is left behind')
+            assert.ok(read(dataDir, collection, '2.json').includes('"d2"'))
         })
     })
 

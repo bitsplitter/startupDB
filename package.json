@@ -9,7 +9,7 @@
 	},
 	"scripts": {
 		"test-behaviour": "mocha ./test/behaviour0.js && mocha ./test/behaviour1.js ",
-		"test": "mocha ./test/behaviour0.js && mocha ./test/implementation0.js && mocha ./test/implementation1.js && mocha ./test/behaviour1.js && mocha ./test/oplogNoOverwrite.js",
+		"test": "mocha ./test/behaviour0.js && mocha ./test/implementation0.js && mocha ./test/implementation1.js && mocha ./test/behaviour1.js && mocha ./test/oplogNoOverwrite.js && mocha ./test/oplogIntegrity.js",
 		"coverage": "nyc npm run test",
 		"build": "tsc -p tsconfig.json"
 	},

@@ -233,28 +233,91 @@ const applyCRUDoperation = function (operation: Operation, db: DBConfig, length:
 function getOplogIDsFromFileNames(files: Array<string>, checkPoint: number): Array<number> {
     const opLogIds: Array<number> = []
     for (const fileName of files) {
-        if (fileName.indexOf('.json') >= 0) {
-            const opLogId = parseInt(fileName)
-            if (opLogId <= checkPoint) continue // Not relevant because they are already flushed
-            opLogIds.push(opLogId)
-        }
+        if (!persist.isOplogFileName(fileName)) continue
+        const opLogId = parseInt(fileName)
+        if (opLogId <= checkPoint) continue // Not relevant because they are already flushed
+        opLogIds.push(opLogId)
     }
     return opLogIds
 }
+
+// Collections with a corrupt oplog. Every request on them fails fast with the same error until an operator
+// repairs the files and runs clearCache (or drops / purges the collection).
+const faultyCollections: { [collectionId: string]: any } = {}
+
+const OPLOG_CORRUPT = 'OPLOG_CORRUPT'
+const OPLOG_LEADING_GAP = 'OPLOG_LEADING_GAP'
+const OPLOG_READ_ERROR = 'OPLOG_READ_ERROR'
+
+const oplogError = function (collection: string, opLogId: number, detail: string, errorId: string, statusCode: number) {
+    const message = `Oplog fault in collection '${collection}' at opLogId ${opLogId}: ${detail}`
+    return Object.assign(new Error(message), { statusCode, code: errorId, body: { error: message, collection, opLogId, errorId } })
+}
+
+const latchOplogFault = function (db: DBConfig, collection: string, opLogId: number, detail: string) {
+    const collectionId = db.dataFiles + '/' + collection
+    const err = Object.assign(oplogError(collection, opLogId, detail, OPLOG_CORRUPT, 500), { latched: true })
+    console.error(`STARTUPDB OPLOG FAULT: ${err.message}`)
+    faultyCollections[collectionId] = err
+    if (startupDB[collectionId]) {
+        usedBytesInMemory -= startupDB[collectionId].length || 0
+        delete startupDB[collectionId]
+    }
+    return err
+}
+
+const throwIfFaulty = function (db: DBConfig, collection: string) {
+    const fault = faultyCollections[db.dataFiles + '/' + collection]
+    if (fault) throw fault
+}
+
+/**
+ * What to do when the first oplog file after checkPoint is not checkPoint + 1:
+ * - 'latch': the checkpoint is known to be current, so the file is missing: latch the collection as faulty.
+ * - 'throw': the checkpoint may be stale (another process flushed in the meantime): throw a transient 503.
+ * - 'ignore': the caller handles it.
+ */
+type LeadingGapPolicy = 'latch' | 'throw' | 'ignore'
+
 //
-// Helper function to loop over all opLog files after a certain checkPoint and call a function on it's content
+// Loop over all opLog files after a certain checkPoint and call a function on their content, in order.
+// The files must be contiguous and contain valid JSON: anything else latches the collection as faulty.
 //
-const processOplog = async function (collection: string, db: DBConfig, checkPoint: number, func: (operation: Operation, length: number) => void) {
+const processOplog = async function (
+    collection: string,
+    db: DBConfig,
+    checkPoint: number,
+    func: (operation: Operation, length: number) => void,
+    leadingGap: LeadingGapPolicy = 'throw'
+) {
     const dataDirectory = './oplog/' + collection
     const files = await persist.readdir(dataDirectory, db)
     const opLogIds = getOplogIDsFromFileNames(files, checkPoint).sort((a: number, b: number) => a - b) // opLog must be processed in order.
+    let expectedId = checkPoint + 1
     for (const opLogId of opLogIds) {
-        try {
-            const operation = <string>(<unknown>await persist.readFile(dataDirectory, opLogId + '.json', db))
-            if (operation != '') func(JSON.parse(operation), operation.length)
-        } catch (err) {
-            // return debugLogger(logError(err))
+        if (opLogId != expectedId) {
+            const detail = `missing oplog file ${expectedId}.json (next file is ${opLogId}.json)`
+            const isLeading = opLogId == opLogIds[0]
+            if (!isLeading || leadingGap == 'latch') throw latchOplogFault(db, collection, expectedId, detail)
+            if (leadingGap == 'throw') throw oplogError(collection, expectedId, detail + ', the oplog may have been flushed concurrently', OPLOG_LEADING_GAP, 503)
         }
+        expectedId = opLogId + 1
+        let raw: string
+        try {
+            raw = String(await persist.readFile(dataDirectory, opLogId + '.json', db))
+        } catch (err) {
+            // A concurrent flush removing files, or a Windows sharing violation: not proof of corruption.
+            throw oplogError(collection, opLogId, `cannot read ${opLogId}.json (${err?.code || err?.message})`, OPLOG_READ_ERROR, 503)
+        }
+        if (raw == '') throw latchOplogFault(db, collection, opLogId, `${opLogId}.json is empty`)
+        let operation: Operation
+        try {
+            operation = JSON.parse(raw)
+        } catch (err) {
+            throw latchOplogFault(db, collection, opLogId, `${opLogId}.json is not valid JSON (${err?.message})`)
+        }
+        if (operation?.opLogId !== opLogId) throw latchOplogFault(db, collection, opLogId, `${opLogId}.json contains opLogId ${operation?.opLogId}`)
+        func(operation, raw.length)
     }
 }
 /**
@@ -279,6 +342,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
     const release = await mutex.acquire()
     let finishedLoading = false
     try {
+        throwIfFaulty(db, collection) // latched while we were waiting for the lock
         // We got the lock so we know we're the only one running this code now.
         // First check if the data we're after isn't already there (then someone else had the lock first and finished the work and we don't do anything)
         // Under high load, startupDB[collectionId] sometimes does not exist. startupDBGC might have kicked it out so we check here for !startupDB[collectionId]
@@ -322,12 +386,18 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
             }
 
             startupDB[collectionId].lock = mutex
-            checkPoint = startupDB[collectionId].checkPoint
+            checkPoint = startupDB[collectionId].checkPoint || 0
             usedBytesInMemory += startupDB[collectionId].length
-            await processOplog(collection, db, checkPoint, function (operation: Operation, length: number) {
-                startupDB[collectionId].nextOpLogId = operation.opLogId + 1
-                applyCRUDoperation(operation, db, length)
-            })
+            try {
+                await processOplog(collection, db, checkPoint, function (operation: Operation, length: number) {
+                    startupDB[collectionId].nextOpLogId = operation.opLogId + 1
+                    applyCRUDoperation(operation, db, length)
+                })
+            } catch (err) {
+                // A latched fault already removed the collection. Otherwise the next request starts a fresh load.
+                if (startupDB[collectionId]) usedBytesInMemory -= startupDB[collectionId].length || 0
+                throw err
+            }
         } else {
             debugLogger('Locked... no need to retrieve', collection)
         }
@@ -344,6 +414,7 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
 
 const loadCollection = async function (db: DBConfig, collection: string): Promise<boolean> {
     const collectionId = db.dataFiles + '/' + collection
+    throwIfFaulty(db, collection)
     if (!startupDB[collectionId] || startupDB[collectionId].loading || !startupDB[collectionId].finishedLoading) await initStartupDB(db, collection)
     if (!startupDB[collectionId]?.data) return false
     startupDB[collectionId].lastAccessed = new Date().getTime()
@@ -376,6 +447,8 @@ const writeOperationToOpLog = async function (operation: Operation, db: DBConfig
                 // The id is not consumed, so every retry hits the same file and fails again until the cause is gone.
                 // The log is the feedback: repeated rejections tell us the problem is still there.
                 console.error(`STARTUPDB OPLOG CONFLICT: write rejected, collectionId ${collectionId}, oplogId ${oplogId}`)
+                const error = `Oplog fault in collection '${collection}' at opLogId ${oplogId}: ${oplogId}.json already exists`
+                err.body = { error, collection, opLogId: oplogId, errorId: persist.OPLOG_FILE_EXISTS }
             }
             if (err && typeof err == 'object' && !err.statusCode) err.statusCode = 500
             throw err
@@ -414,7 +487,7 @@ const invalidCollectionName = () => ({ statusCode: 400, message: { error: 'Inval
 const dbExecuteDBAcommand = async function (req: Req, query: any, context: any) {
     const command = query.command
     if (command === undefined || !(command in dbaCommands)) return { statusCode: 400, message: { error: 'unknown command:' + command, errorId: '7WMWWvtJbE6P' } }
-    // purgeOplog and clearCache accept '*' or a comma separated list of collections
+    // purgeOplog, clearCache and opLogHealthCheck accept '*' or a comma separated list of collections
     const collection = query.collection
     if (collection && collection != '*' && !String(collection).split(',').every(tools.isValidCollectionName)) return invalidCollectionName()
     return await dbaCommands[command](req, query, context)
@@ -427,14 +500,23 @@ const executeDBAcommand = async function (req: Req, res: Res, next: NextFunction
             error = await beforeFn(req, res, next, req.startupDB.collection)
             if (error.statusCode != 0) return res.status(error.statusCode).send(error.data)
         }
-        let response = await dbExecuteDBAcommand(req, req.body, { usedBytesInMemory, MAX_BYTES_IN_MEMORY, startupDB, initStartupDB, startupDBGC })
+        let response = await dbExecuteDBAcommand(req, req.body, dbaContext())
         if (response.statusCode) return res.status(response.statusCode).send(response.message)
         for (const afterFn of postHooks) response = await afterFn(req, response)
         return res.send(response)
     } catch (e) {
-        return res.status(e?.statusCode || 500).send('')
+        return res.status(e?.statusCode || 500).send(e?.body || '')
     }
 }
+const dbaContext = () => ({
+    usedBytesInMemory,
+    MAX_BYTES_IN_MEMORY,
+    startupDB,
+    initStartupDB,
+    startupDBGC,
+    faultyCollections,
+    latchOplogFault,
+})
 /**
  * Send the oplog starting from the given opLogId as an array op operations
  * This will allow a client to update it's remote copy of the database
@@ -442,22 +524,21 @@ const executeDBAcommand = async function (req: Req, res: Res, next: NextFunction
 const sendOpLog = async function (req: Req, res: Res, next: NextFunction, fromOpLogId: number) {
     const collection = req.startupDB.collection
     if (isNaN(fromOpLogId)) return res.sendStatus(400)
+    throwIfFaulty(req.startupDB, collection)
 
     const opLog: Array<any> = []
     // When a client has old data and requests an opLogId that has been deleted (due to flush), we respond with a 404 signalling the client to reload
     let tooOld = true
-    let prevId = -1 // Used to detect a gap in the oplog (because of a pending operation). Only send the contigues opLog
+    // A leading gap is the 'too old' case: the client's fromOpLogId says nothing about the current checkpoint
     await processOplog(collection, req.startupDB, fromOpLogId, function (operation: Operation) {
         if (operation.opLogId == fromOpLogId + 1) tooOld = false
-        if (prevId != -1 && operation.opLogId > prevId + 1) return // a gap, don't send the rest
-        prevId = operation.opLogId
         if (operation.operation == OperationType.PATCH || operation.operation == OperationType.UPDATE) {
             opLog.push({ operation: operation.operation, collection: operation.collection, data: operation.data, opLogId: operation.opLogId, timestamp: operation.timestamp })
         }
         if (operation.operation == OperationType.CREATE || operation.operation == OperationType.DELETE) {
             opLog.push(operation)
         }
-    })
+    }, 'ignore')
     if (tooOld && opLog.length > 0) return res.sendStatus(404)
     return res.send(opLog)
 }
@@ -801,12 +882,16 @@ const processMethod = async function (
         if (response.statusCode > 200) return res.status(response.statusCode).send(response.message)
         if (query['fromOpLogId']) return await sendOpLog(req, res, next, parseInt(query['fromOpLogId']))
     } catch (e) {
-        console.error('STARTUPDB Error payload:', e?.response?.data?.error)
-        console.error('STARTUPDB Full payload:', e?.response?.data)
-        console.error('STARTUPDB Message:', e?.message)
-        console.error('STARTUPDB Stack:', e?.stack)
-        if (typeof req.startupDB.options.sentry?.captureException == 'function') req.startupDB.options.sentry.captureException(e)
-        return res.status(e?.statusCode || 500).send('')
+        // A latched fault is rethrown on every request: report it once, not on every retry
+        if (!e?.reported) {
+            console.error('STARTUPDB Error payload:', e?.response?.data?.error)
+            console.error('STARTUPDB Full payload:', e?.response?.data)
+            console.error('STARTUPDB Message:', e?.message)
+            console.error('STARTUPDB Stack:', e?.stack)
+            if (typeof req.startupDB.options.sentry?.captureException == 'function') req.startupDB.options.sentry.captureException(e)
+            if (e?.latched) e.reported = true
+        }
+        return res.status(e?.statusCode || 500).send(e?.body || '')
     }
     if (!req.startupDB.options?.streamObjects || !response.data || typeof response.data == 'string') return res.send(response.data)
     res.set('Content-Type', 'application/json')
@@ -909,7 +994,7 @@ const db = function (options: DBOptions) {
             return dbPatchObjects(req.startupDB, collection, tools.ensureArray(payload))
         }
         req.startupDB.executeDBAcommand = async function (payload: any) {
-            return dbExecuteDBAcommand(req, payload, { usedBytesInMemory, startupDB, initStartupDB, startupDBGC })
+            return dbExecuteDBAcommand(req, payload, dbaContext())
         }
         req.startupDB.pullOplog = async function (collection: string): Promise<void> {
             if (!tools.isValidCollectionName(collection)) return
@@ -919,11 +1004,26 @@ const db = function (options: DBOptions) {
             // Secondary writers call this from hooks to apply oplog entries another process wrote to the shared folder.
             if (!(await loadCollection(db, collection))) return
             const entry = startupDB[collectionId]
-            if (!entry?.data) return
-            await processOplog(collection, db, entry.nextOpLogId - 1, function (operation: Operation, length: number) {
-                entry.nextOpLogId = operation.opLogId + 1
-                applyCRUDoperation(operation, db, length)
-            })
+            if (!entry?.data || !entry.lock?.acquire) return
+            let flushedElsewhere = false
+            // Serialized with writes and loads: two pulls must never replay the same operation twice
+            const release = await entry.lock.acquire()
+            try {
+                if (startupDB[collectionId] !== entry) return // evicted or reloaded while we waited, the next load reads the disk
+                await processOplog(collection, db, entry.nextOpLogId - 1, function (operation: Operation, length: number) {
+                    entry.nextOpLogId = operation.opLogId + 1
+                    applyCRUDoperation(operation, db, length)
+                })
+            } catch (err) {
+                if (err?.code != OPLOG_LEADING_GAP) throw err
+                // Another process flushed the operations we have not seen yet into a newer checkpoint: reload from disk
+                flushedElsewhere = true
+                entry.finishedLoading = false
+                usedBytesInMemory -= entry.length || 0
+            } finally {
+                release()
+            }
+            if (flushedElsewhere) await loadCollection(db, collection)
         }
 
         const collection = req.startupDB.collection

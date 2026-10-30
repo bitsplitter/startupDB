@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 import { MutexInterface } from 'async-mutex'
 
-export type DBCommandType = 'create' | 'drop' | 'ensureCollection' | 'flush' | 'garbageCollector' | 'inspect' | 'list' | 'purgeOplog' | 'clearCache'
+export type DBCommandType = 'create' | 'drop' | 'ensureCollection' | 'flush' | 'garbageCollector' | 'inspect' | 'list' | 'purgeOplog' | 'clearCache' | 'opLogHealthCheck'
 
 export type StorageType = 'array' | 'object'
 
@@ -29,7 +29,7 @@ export type FlushCommandParams = {
 }
 
 export type PurgeCommandParams = {
-    command: 'purgeOplog' | 'clearCache'
+    command: 'purgeOplog' | 'clearCache' | 'opLogHealthCheck'
     collection?: string | '*'
 }
 

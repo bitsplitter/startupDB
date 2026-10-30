@@ -2,6 +2,7 @@ import { Mutex, MutexInterface } from 'async-mutex'
 import { Req, DBConfig, FlushCommandParams, CreateCommandParams, DropCommandParams, PurgeCommandParams, SimpleCommandParams } from './types'
 import persist from './persistence'
 import tools from './tools'
+import path from 'path'
 import debug from 'debug'
 const debugLogger = debug('startupdb')
 
@@ -151,7 +152,7 @@ const ensureCollection = async function (req: Req, commandParameters: CreateComm
     await persist.writeFile('./checkpoint/' + collection, 'latest.json', JSON.stringify(startupDB[collectionId]), req.startupDB)
     return { response: 'OK' }
 }
-const drop = async function (req: Req, commandParameters: DropCommandParams, { startupDB }) {
+const drop = async function (req: Req, commandParameters: DropCommandParams, { startupDB, faultyCollections }) {
     const collection = commandParameters.collection
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: '3CzZhhG6zuQ8' } }
     const dataFiles = req.startupDB.dataFiles
@@ -161,14 +162,16 @@ const drop = async function (req: Req, commandParameters: DropCommandParams, { s
         return { statusCode: 500, message: { error: 'Cannot remove files from checkpoint', errorId: 'Zmn8smIUdhzw' } }
 
     delete startupDB[collectionId]
+    delete faultyCollections[collectionId]
     return { response: 'OK' }
 }
-const purgeOplog = async function (req: Req, commandParameters: PurgeCommandParams, { startupDB, initStartupDB }) {
+const purgeOplog = async function (req: Req, commandParameters: PurgeCommandParams, { startupDB, initStartupDB, faultyCollections }) {
     const collections = commandParameters.collection
     if (!collections) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'CIvNZ51YQM6q' } }
     if (collections == '*') {
         if (!persist.rmdirSync('./oplog', req.startupDB)) return { statusCode: 500, message: { error: 'Cannot remove files from oplog', errorId: 'WLmnUdhzwJ8s' } }
         for (const collectionId in startupDB) startupDB[collectionId] = {}
+        for (const collectionId in faultyCollections) delete faultyCollections[collectionId]
         return { response: 'OK' }
     }
     const dataFiles = req.startupDB.dataFiles
@@ -176,21 +179,66 @@ const purgeOplog = async function (req: Req, commandParameters: PurgeCommandPara
         const collectionId = dataFiles + '/' + collection
         if (!persist.rmdirSync('./oplog/' + collection, req.startupDB)) return { statusCode: 500, message: { error: 'Cannot remove files from oplog', errorId: 'J8nUdhzWLmws' } }
         startupDB[collectionId] = {}
+        delete faultyCollections[collectionId]
         await initStartupDB(req.startupDB, collection)
     }
     return { response: 'OK' }
 }
-const clearCache = async function (req: Req, commandParameters: PurgeCommandParams, { startupDB, initStartupDB }) {
-    const collection = commandParameters.collection
-    if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'CIvNZ51YQM6q' } }
-    if (collection == '*') {
+const clearCache = async function (req: Req, commandParameters: PurgeCommandParams, { startupDB, faultyCollections }) {
+    const collections = commandParameters.collection
+    if (!collections) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'CIvNZ51YQM6q' } }
+    if (collections == '*') {
         for (const collectionId in startupDB) startupDB[collectionId] = {}
+        for (const collectionId in faultyCollections) delete faultyCollections[collectionId]
         return { response: 'OK' }
     }
     const dataFiles = req.startupDB.dataFiles
-    const collectionId = dataFiles + '/' + collection
-    startupDB[collectionId] = {}
+    for (const collection of collections.split(',')) {
+        const collectionId = dataFiles + '/' + collection
+        startupDB[collectionId] = {}
+        delete faultyCollections[collectionId]
+    }
     return { response: 'OK' }
+}
+/**
+ * Cheap oplog check: only the file names are inspected. The <n>.json files must form an unbroken increasing sequence.
+ * Neither the checkpoint nor the file contents are read, so a missing first file or a corrupt file is not detected here
+ * (loading the collection does detect those). For the same reason a healthy chain does not clear an existing fault.
+ */
+const opLogHealthCheck = async function (req: Req, commandParameters: PurgeCommandParams, { faultyCollections, latchOplogFault }) {
+    const db = req.startupDB
+    const dataFiles = db.dataFiles
+    const target = commandParameters.collection
+    const oplogRoot = path.join(dataFiles, 'oplog')
+    const collections =
+        !target || target == '*'
+            ? persist
+                  .readdirRecursive(oplogRoot)
+                  .map((dir: string) => path.relative(oplogRoot, dir).replace(/\\/g, '/'))
+                  .filter((collection: string) => collection != '')
+            : target.split(',')
+    const errors: Array<object> = []
+    for (const collection of collections) {
+        try {
+            const opLogIds = (await persist.readdir('./oplog/' + collection, db))
+                .filter(persist.isOplogFileName)
+                .map((fileName: string) => parseInt(fileName))
+                .sort((a: number, b: number) => a - b)
+            for (let i = 1; i < opLogIds.length; i++) {
+                const expectedId = opLogIds[i - 1] + 1
+                if (opLogIds[i] != expectedId) {
+                    latchOplogFault(db, collection, expectedId, `missing oplog file ${expectedId}.json (next file is ${opLogIds[i]}.json)`)
+                    break
+                }
+            }
+        } catch (err) {
+            errors.push({ collection, error: err?.message })
+        }
+    }
+    const faulty = Object.keys(faultyCollections)
+        .filter((collectionId) => collectionId.startsWith(dataFiles + '/'))
+        .map((collectionId) => faultyCollections[collectionId].body)
+    return { status: 'success', checked: collections.length, faultyCollections: faulty, errors }
 }
 const garbageCollector = async function (req: Req, commandParameters: SimpleCommandParams, { startupDBGC }) {
     const deletedCollections = startupDBGC()
@@ -221,33 +269,42 @@ const inspect = async function (
         nrCollectionsInCache: orderedCollections.length,
     }
 }
-const list = async function (req: Req, commandParameters: SimpleCommandParams, { startupDB }) {
+const list = async function (req: Req, commandParameters: SimpleCommandParams, { startupDB, faultyCollections }) {
     const dataFiles = req.startupDB.dataFiles
-    const collectionsList = Object.keys(startupDB).map((collectionName) => {
-        return {
-            name: collectionName,
-            inCache: true,
-            count: startupDB[collectionName].data ? Object.keys(startupDB[collectionName].data)?.length : 0,
-            checkPoint: startupDB[collectionName].checkPoint,
-            lastOplogId: startupDB[collectionName].lastOplogId || 0,
-        }
-    })
-    function addCollectionsFromFolder(folder) {
+    const collectionsList: Array<{ name: string; inCache: boolean; count: number; checkPoint: number; lastOplogId: number; faulty?: boolean; faultError?: string }> =
+        Object.keys(startupDB).map((collectionName) => {
+            return {
+                name: collectionName,
+                inCache: true,
+                count: startupDB[collectionName].data ? Object.keys(startupDB[collectionName].data)?.length : 0,
+                checkPoint: startupDB[collectionName].checkPoint,
+                lastOplogId: startupDB[collectionName].lastOplogId || 0,
+            }
+        })
+    function addCollections(names: Array<string>) {
         const listedCollectionIndex = {}
         collectionsList.forEach((collection) => {
             listedCollectionIndex[collection.name] = true
         })
-        const files = persist.readdirRecursive(dataFiles + '/' + folder).map((dir: string) => dir.replace('/' + folder, '').replace('\\' + folder, ''))
-        const list = files.filter((file) => !listedCollectionIndex[file])
-        list.forEach((file) => {
-            collectionsList.push({ name: file, inCache: false, count: 0, checkPoint: 0, lastOplogId: 0 })
+        const list = names.filter((name) => !listedCollectionIndex[name])
+        list.forEach((name) => {
+            collectionsList.push({ name, inCache: false, count: 0, checkPoint: 0, lastOplogId: 0 })
         })
+    }
+    function addCollectionsFromFolder(folder) {
+        addCollections(persist.readdirRecursive(dataFiles + '/' + folder).map((dir: string) => dir.replace('/' + folder, '').replace('\\' + folder, '')))
     }
     addCollectionsFromFolder('oplog')
     addCollectionsFromFolder('checkpoint')
+    addCollections(Object.keys(faultyCollections))
     collectionsList.forEach((c) => (c.name = c.name.replace(dataFiles + '/', '')))
     collectionsList.forEach((c) => (c.name = c.name.replace(dataFiles + '\\', '')))
     collectionsList.forEach((c) => (c.name = c.name.replace(/\\/g, '/')))
+    collectionsList.forEach((c) => {
+        const fault = faultyCollections[dataFiles + '/' + c.name]
+        c.faulty = Boolean(fault)
+        if (fault) c.faultError = fault.body?.error || fault.message
+    })
 
     return { collections: collectionsList }
 }
@@ -261,4 +318,5 @@ export default {
     list,
     purgeOplog,
     clearCache,
+    opLogHealthCheck,
 }

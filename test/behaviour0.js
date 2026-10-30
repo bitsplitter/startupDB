@@ -759,8 +759,8 @@ describe('Behaviour GET command', function () {
             .expect(200)
             .expect({
                 collections: [
-                    { name: 'origineel', inCache: true, count: 6, checkPoint: 0, lastOplogId: 0 },
-                    { name: 'reject', inCache: true, count: 0, checkPoint: 0, lastOplogId: 0 },
+                    { name: 'origineel', inCache: true, count: 6, checkPoint: 0, lastOplogId: 0, faulty: false },
+                    { name: 'reject', inCache: true, count: 0, checkPoint: 0, lastOplogId: 0, faulty: false },
                 ],
             })
             .end(done)

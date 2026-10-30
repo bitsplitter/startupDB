@@ -2,8 +2,10 @@ import { DBConfig } from './types'
 
 import fs from 'fs-extra'
 import path from 'path'
+import { v4 as uuidv4 } from 'uuid'
 const highWaterMark = 64 * 1024
 const OPLOG_FILE_EXISTS = 'OPLOG_FILE_EXISTS'
+const isOplogFileName = (fileName: string) => /^\d+\.json$/.test(fileName)
 
 const writeFileSync = function (dirName: string, fileName: string, payload: string, db: DBConfig) {
     db.options.secondaryDataDirs?.forEach((rootDir) => {
@@ -36,26 +38,15 @@ const unlinkWithRetry = async function (file: string) {
 }
 
 /**
- * Open a file for writing, failing when it already exists (O_CREAT | O_EXCL).
- *
- * EEXIST is final: an existing file is never opened, so it is never truncated or overwritten.
- * EPERM/EBUSY/EACCES are retried because on Windows they are transient when an AV scanner/indexer
- * holds a handle, or when a previous file with this name is still 'delete pending'. Retrying is safe:
- * the exclusive open can never succeed on a file that exists.
- * If the error persists we give up (and the caller fails the request), we never fall back to overwriting.
+ * Retry fs operations that fail with EPERM/EBUSY/EACCES. On Windows these are transient when an AV scanner/indexer
+ * holds a handle, or when a previous file with this name is still 'delete pending'.
  */
-const openNewFile = async function (file: string): Promise<number> {
+const withRetry = async function <T>(fn: () => Promise<T>): Promise<T> {
     let delay = 50
     for (let attempt = 0; ; attempt++) {
         try {
-            return await fs.open(file, 'wx')
+            return await fn()
         } catch (err) {
-            if (err.code == 'EEXIST') {
-                const conflict: any = new Error(`Refusing to overwrite existing oplog file: ${file}`)
-                conflict.code = OPLOG_FILE_EXISTS
-                conflict.statusCode = 500
-                throw conflict
-            }
             if (attempt >= 4 || !RETRYABLE_FS_ERRORS.includes(err.code)) throw err
             await sleep(delay)
             delay *= 2
@@ -63,27 +54,49 @@ const openNewFile = async function (file: string): Promise<number> {
     }
 }
 
-const createNewFile = async function (file: string, payload: string) {
-    const fd = await openNewFile(file) // an error here means the file is not ours: never unlink it
+/**
+ * Publish tmpFile under the name file, failing when file already exists.
+ *
+ * link(2) / CreateHardLinkW never replace an existing target, so EEXIST is final: an existing file is never overwritten.
+ * Retrying sharing violations is safe for the same reason.
+ */
+const linkNewFile = async function (tmpFile: string, file: string) {
     try {
-        await fs.writeFile(fd, payload, 'utf8')
+        await withRetry(() => fs.link(tmpFile, file))
     } catch (err) {
-        // The file is ours and incomplete. Remove it, a partial oplog file would poison this id.
-        try {
-            await fs.close(fd)
-        } catch {}
-        try {
-            await unlinkWithRetry(file)
-        } catch {}
-        throw err
+        if (err.code != 'EEXIST') throw err
+        const conflict: any = new Error(`Refusing to overwrite existing oplog file: ${file}`)
+        conflict.code = OPLOG_FILE_EXISTS
+        conflict.statusCode = 500
+        throw conflict
     }
+}
+
+/**
+ * Write the payload to a private temporary file and publish it with a hard link, so readers only ever see
+ * a complete file. The temporary name is unique per call: concurrent writers of the same id never share it,
+ * and a leftover from a crash never blocks an id. It does not end in .json, so oplog readers ignore it.
+ */
+const createNewFile = async function (file: string, payload: string) {
+    const tmpFile = path.join(path.dirname(file), `${path.basename(file, '.json')}.${uuidv4()}.tmp`)
+    const fd = await withRetry(() => fs.open(tmpFile, 'wx'))
     try {
-        await fs.close(fd)
-    } catch (err) {
+        let written = false
         try {
-            await unlinkWithRetry(file)
+            await fs.writeFile(fd, payload, 'utf8')
+            written = true
+        } finally {
+            try {
+                await fs.close(fd)
+            } catch (err) {
+                if (written) throw err
+            }
+        }
+        await linkNewFile(tmpFile, file)
+    } finally {
+        try {
+            await unlinkWithRetry(tmpFile)
         } catch {}
-        throw err
     }
 }
 
@@ -253,6 +266,7 @@ const mostRecentFile = async function (dirName: string, db: DBConfig) {
     const files = await readdir(dirName, db)
     let max = -1
     for (const file of files) {
+        if (!isOplogFileName(file)) continue
         const fileNr = parseInt(file)
         if (fileNr > max) max = fileNr
     }
@@ -330,6 +344,7 @@ export default {
     copyFile,
     existsSync,
     fileStats,
+    isOplogFileName,
     mostRecentFile,
     OPLOG_FILE_EXISTS,
     readdir,

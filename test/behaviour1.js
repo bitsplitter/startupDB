@@ -78,4 +78,30 @@ describe('Behaviour: pullOplog on a writable (secondary) server', function () {
         const ids = res.body.map((d) => d.id).sort()
         assert.deepStrictEqual(ids, ['fromPrimary', 'seed'])
     })
+
+    it('reloads from the checkpoint when another process flushed operations it has not seen yet', async function () {
+        // Collection is warm with nextOpLogId 3. The primary writes ops 3 and 4, flushes them into checkpoint 4 and removes them,
+        // then writes op 5. Replaying only 5.json would silently lose ops 3 and 4.
+        const doc = (id) => ({ id })
+        const checkpoint = {
+            checkPoint: 4,
+            nextOpLogId: 5,
+            savedAt: new Date(),
+            options: {},
+            lastAccessed: 0,
+            lastModified: 0,
+            data: { seed: doc('seed'), fromPrimary: doc('fromPrimary'), flushed3: doc('flushed3'), flushed4: doc('flushed4') },
+        }
+        fs.mkdirSync(path.join(pullDir, 'checkpoint', collection), { recursive: true })
+        fs.writeFileSync(path.join(pullDir, 'checkpoint', collection, 'latest.json'), JSON.stringify(checkpoint))
+        for (const id of [1, 2]) fs.unlinkSync(path.join(pullDir, 'oplog', collection, id + '.json'))
+        const op5 = { operation: 'create', collection, data: [doc('after')], opLogId: 5, timestamp: { unixTimeStamp: 1, timeStamp: 'test' } }
+        fs.writeFileSync(path.join(pullDir, 'oplog', collection, '5.json'), JSON.stringify(op5))
+
+        const res = await request(pullApp).get(`/db/${collection}`).expect(200)
+        assert.deepStrictEqual(res.body.map((d) => d.id).sort(), ['after', 'flushed3', 'flushed4', 'fromPrimary', 'seed'])
+
+        await request(pullApp).post(`/db/${collection}`).set('Content-type', 'application/json').send({ id: 'next' }).expect(200)
+        assert.ok(fs.existsSync(path.join(pullDir, 'oplog', collection, '6.json')), 'the next write continues after the reloaded checkpoint')
+    })
 })
