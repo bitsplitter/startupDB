@@ -131,9 +131,9 @@ describe('Oplog integrity', function () {
             fs.unlinkSync(oplogFile(collection, '3.json'))
             await dbaCommand({ command: 'clearCache', collection }).expect(200)
         })
-        it('fails transiently on load, because another process may just have flushed', async function () {
-            const res = await quietly(() => get(collection).expect(503))
-            assert.strictEqual(res.body.errorId, 'OPLOG_LEADING_GAP')
+        it('loads the checkpoint plus the surviving oplog tail', async function () {
+            const res = await get(collection).expect(200)
+            assert.deepStrictEqual(res.body.map((d) => d.id).sort(), ['d1', 'd2', 'd4'])
             assert.strictEqual((await listed(collection)).faulty, false)
         })
         it('a client that is behind the oplog still gets a 404 to reload', async function () {
@@ -143,6 +143,37 @@ describe('Oplog integrity', function () {
             const res = await dbaCommand({ command: 'opLogHealthCheck', collection }).expect(200)
             assert.strictEqual(res.body.checked, 1)
             assert.deepStrictEqual(res.body.faultyCollections, [])
+        })
+    })
+
+    describe('a capped oplog with no checkpoint', function () {
+        it('replays from the first file that still exists', async function () {
+            const collection = 'capped'
+            await seed(collection, 3)
+            fs.unlinkSync(oplogFile(collection, '1.json'))
+            await dbaCommand({ command: 'clearCache', collection }).expect(200)
+            const res = await get(collection).expect(200)
+            assert.deepStrictEqual(res.body.map((d) => d.id).sort(), ['d2', 'd3'])
+            assert.strictEqual((await listed(collection)).faulty, false)
+        })
+    })
+
+    describe('a missing prefix and a hole in the surviving tail', function () {
+        it('latches the collection', async function () {
+            const collection = 'cappedHole'
+            await seed(collection, 2)
+            await dbaCommand({ command: 'flush', collection }).expect(200) // checkpoint 2
+            await post(collection, { id: 'd3' }).expect(200)
+            await post(collection, { id: 'd4' }).expect(200)
+            await post(collection, { id: 'd5' }).expect(200)
+            await post(collection, { id: 'd6' }).expect(200)
+            fs.unlinkSync(oplogFile(collection, '3.json'))
+            fs.unlinkSync(oplogFile(collection, '5.json'))
+            await dbaCommand({ command: 'clearCache', collection }).expect(200)
+            const res = await quietly(() => get(collection).expect(500))
+            assert.strictEqual(res.body.errorId, 'OPLOG_CORRUPT')
+            assert.strictEqual(res.body.opLogId, 5)
+            assert.strictEqual((await listed(collection)).faulty, true)
         })
     })
 

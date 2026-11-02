@@ -320,6 +320,11 @@ const processOplog = async function (
         func(operation, raw.length)
     }
 }
+// null means the checkpoint file is absent. A birthtime of 0 is a real value: fileStats uses 0 for any stat error, and HEAD depends on that.
+const checkpointBirthtime = async function (db: DBConfig, fileName: string | null): Promise<number | null> {
+    if (!fileName || !persist.existsSync(fileName, db)) return null
+    return (await persist.fileStats(fileName, db)).birthtimeMs
+}
 /**
  * Initialize DB
  * Look for the latest checkpoint, load it when available
@@ -355,13 +360,16 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
             startupDB[collectionId].finishedLoading = false
             startupDB[collectionId].lastAccessed = new Date().getTime()
 
+            let checkpointFile: string | null = null
             try {
                 const ndJsononObject = await persist.readCheckpointFromStream(dataDirectory, 'latest.ndjson', db)
                 if (ndJsononObject.savedAt) {
+                    checkpointFile = dataDirectory + '/latest.ndjson'
                     startupDB[collectionId] = ndJsononObject
                     startupDB[collectionId].length = ndJsononObject.totalBytes
                 } else {
                     const raw = <string>(<unknown>await persist.readFile(dataDirectory, 'latest.json', db))
+                    checkpointFile = dataDirectory + '/latest.json'
                     // This contains a previously saved checkpoint
                     startupDB[collectionId] = JSON.parse(raw)
                     startupDB[collectionId].length = raw.length
@@ -387,16 +395,36 @@ const initStartupDB = async function (db: DBConfig, collection: string) {
 
             startupDB[collectionId].lock = mutex
             checkPoint = startupDB[collectionId].checkPoint || 0
+            // Taken before the oplog scan. A flush replaces this file, so a later birthtime means the snapshot we just read is stale.
+            const birthtime = await checkpointBirthtime(db, checkpointFile)
             usedBytesInMemory += startupDB[collectionId].length
-            try {
-                await processOplog(collection, db, checkPoint, function (operation: Operation, length: number) {
-                    startupDB[collectionId].nextOpLogId = operation.opLogId + 1
-                    applyCRUDoperation(operation, db, length)
-                })
-            } catch (err) {
-                // A latched fault already removed the collection. Otherwise the next request starts a fresh load.
+            const applyLoadedOperation = function (operation: Operation, length: number) {
+                startupDB[collectionId].nextOpLogId = operation.opLogId + 1
+                applyCRUDoperation(operation, db, length)
+            }
+            const dropLoadedCollection = function () {
+                // A latched fault already removed the collection and its bytes.
                 if (startupDB[collectionId]) usedBytesInMemory -= startupDB[collectionId].length || 0
-                throw err
+            }
+            try {
+                await processOplog(collection, db, checkPoint, applyLoadedOperation)
+            } catch (err) {
+                // A missing prefix with an unchanged checkpoint is a capped oplog: the deleted files are not coming back.
+                // A changed birthtime means a flush replaced the snapshot while we were listing. The retry reads the new one.
+                if (err?.code != OPLOG_LEADING_GAP || (await checkpointBirthtime(db, checkpointFile)) !== birthtime) {
+                    dropLoadedCollection()
+                    throw err
+                }
+                try {
+                    await processOplog(collection, db, checkPoint, applyLoadedOperation, 'ignore')
+                } catch (replayErr) {
+                    dropLoadedCollection()
+                    throw replayErr
+                }
+                if ((await checkpointBirthtime(db, checkpointFile)) !== birthtime) {
+                    dropLoadedCollection()
+                    throw err
+                }
             }
         } else {
             debugLogger('Locked... no need to retrieve', collection)
