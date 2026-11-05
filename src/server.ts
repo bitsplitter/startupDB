@@ -903,6 +903,9 @@ const processMethod = async function (
                 }
                 return res.status(200).send({ lastAccessed: 0, lastModified: 0, checkPoint: 0, nextOpLogId: 1, data: {}, savedAt: 0, length: 0 })
             }
+            // Before-hooks already ran. A hook that returned a body (the v7 reports) never
+            // reaches this write. A real create/update on a read-only server is still rejected.
+            if (req.startupDB.options?.readOnly && req.method != 'GET' && req.method != 'HEAD') return res.sendStatus(403)
             response = await method(req.startupDB, collection, req.body, query)
         }
         for (const afterFn of postHooks) response = await afterFn(req, response)
@@ -1064,13 +1067,19 @@ const db = function (options: DBOptions) {
         if (req.method == 'GET') return await processMethod(req, res, next, collection, query, req.startupDB.beforeGet, dbGetObjects, req.startupDB.afterGet)
         if (req.method == 'HEAD') return await processMethod(req, res, next, collection, query, [], dbGetHeaders, [])
 
-        if (options.readOnly) return res.sendStatus(403)
-        // Be strict about what we consume
+        // Be strict about what we consume. Read-only used to reject here, before before-hooks,
+        // so a POST whose hook only computes a response (and never writes) could not run.
 
         if (req.method != 'DELETE' && req.headers['content-type'] != 'application/json' && req.headers['content-type'] != 'application/json;charset=UTF-8')
             return res.sendStatus(400)
 
-        if (req.method == 'POST' && rootRoute) return await executeDBAcommand(req, res, next, req.startupDB.beforePost, req.startupDB.afterPost)
+        if (req.method == 'POST' && rootRoute) {
+            // clearCache only drops this process's memory. A read-only worker must still
+            // accept it so a purge on the primary can reset every process.
+            const clearCache = req.body?.command === 'clearCache'
+            if (options.readOnly && !clearCache) return res.sendStatus(403)
+            return await executeDBAcommand(req, res, next, req.startupDB.beforePost, req.startupDB.afterPost)
+        }
         req.body = tools.ensureArray(req.body)
 
         if (req.method == 'POST') return await processMethod(req, res, next, collection, query, req.startupDB.beforePost, dbCreateObjects, req.startupDB.afterPost)

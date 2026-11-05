@@ -142,7 +142,10 @@ const ensureCollection = async function (req: Req, commandParameters: CreateComm
     const dataFiles = req.startupDB.dataFiles
     const collectionId = dataFiles + '/' + collection
     try {
-        if (startupDB[collectionId] !== undefined || persist.existsSync('./checkpoint/' + collection + '/latest.json', req.startupDB)) return { response: 'OK' }
+        // A checkpoint on disk is the collection. A cache entry with no data is only a placeholder
+        // left by clearCache, so it must not block creating the collection after a drop removed the files.
+        if (persist.existsSync('./checkpoint/' + collection + '/latest.json', req.startupDB)) return { response: 'OK' }
+        if (startupDB[collectionId] !== undefined && startupDB[collectionId].data !== undefined) return { response: 'OK' }
     } catch (err) {
         console.log(err)
     }
@@ -195,6 +198,8 @@ const clearCache = async function (req: Req, commandParameters: PurgeCommandPara
     const dataFiles = req.startupDB.dataFiles
     for (const collection of collections.split(',')) {
         const collectionId = dataFiles + '/' + collection
+        // An empty entry has no finishedLoading, so the next read reloads from disk.
+        // Deleting the key would also drop it from the cache count the garbage collector reports.
         startupDB[collectionId] = {}
         delete faultyCollections[collectionId]
     }
