@@ -14,6 +14,8 @@ import {
     OperationType,
     DBbeforeHookFunction,
     DBafterHookFunction,
+    Collection,
+    CollectionMeta,
 } from './types'
 import { NextFunction } from 'express'
 import path from 'path'
@@ -449,6 +451,127 @@ const loadCollection = async function (db: DBConfig, collection: string): Promis
     return true
 }
 
+/*
+ * Array collections have no ids, so a write never needs their data. Their manifest (checkpoint/<collection>/manifest.json)
+ * holds everything a write does need. When the data is not in memory, a write loads only the manifest and appends to the oplog.
+ * The manifest is never used to load data: latest.json plus the oplog remain the source of truth.
+ * The next opLogId is the highest of the manifest's and the oplog's, so the manifest only needs to be rewritten by a flush,
+ * before it removes oplog files.
+ */
+const isArrayCollection = (entry: Collection | undefined) => entry?.options?.storageType == 'array'
+const isDataLoaded = (entry: Collection | undefined) => Boolean(entry?.data && entry.finishedLoading && !entry.manifestOnly)
+
+const manifestOf = function (entry: Collection, overrides: object = {}) {
+    return {
+        checkPoint: entry.checkPoint || 0,
+        nextOpLogId: entry.nextOpLogId,
+        savedAt: entry.savedAt || 0,
+        lastModified: entry.lastModified || 0,
+        options: entry.options,
+        ...overrides,
+    }
+}
+
+// Replace a cache entry with a data-less one. Keeps the lock, so it stays serialized with writes and flushes.
+const toManifestOnlyEntry = function (collectionId: string, entry: Collection) {
+    if (entry.data && !entry.manifestOnly) usedBytesInMemory -= entry.length || 0
+    startupDB[collectionId] = <Collection>(<unknown>{
+        ...tools.deepCopy({ ...tools.EMPTY_COLLECTION, lock: {} }),
+        ...manifestOf(entry),
+        lock: entry.lock,
+        data: undefined,
+        lastAccessed: entry.lastAccessed,
+        manifestOnly: true,
+    })
+}
+
+/**
+ * Put a data-less entry for an array collection in the cache, seeded from its manifest.
+ * Returns false when that is not possible (no manifest, not an array collection, or the data is loaded or loading):
+ * the caller then loads the collection as before.
+ */
+const loadManifest = async function (db: DBConfig, collection: string): Promise<boolean> {
+    const collectionId = db.dataFiles + '/' + collection
+    throwIfFaulty(db, collection)
+    if (startupDB[collectionId]?.manifestOnly) return true
+    let mutex: MutexInterface = startupDB[collectionId]?.lock
+    if (!mutex?.acquire) {
+        mutex = new Mutex()
+        startupDB[collectionId] = tools.deepCopy(tools.EMPTY_COLLECTION)
+        startupDB[collectionId].lock = mutex
+        startupDB[collectionId].lastAccessed = new Date().getTime()
+    }
+    const release = await mutex.acquire()
+    try {
+        throwIfFaulty(db, collection) // latched while we were waiting for the lock
+        const entry = startupDB[collectionId]
+        if (!entry || entry.lock !== mutex) return false // evicted or cleared while we waited
+        if (entry.manifestOnly) return true
+        if (entry.loading || entry.finishedLoading) return false
+        const manifest = await persist.readManifest(collection, db)
+        if (manifest?.options?.storageType != 'array' || typeof manifest.nextOpLogId != 'number') return false
+        const lastOplogId = await persist.mostRecentFile('./oplog/' + collection, db)
+        startupDB[collectionId] = <Collection>(<unknown>{
+            ...tools.deepCopy({ ...tools.EMPTY_COLLECTION, lock: {} }),
+            checkPoint: manifest.checkPoint || 0,
+            nextOpLogId: Math.max(manifest.nextOpLogId, lastOplogId + 1),
+            savedAt: manifest.savedAt || 0,
+            lastModified: manifest.lastModified || 0,
+            options: manifest.options,
+            lock: mutex,
+            data: undefined,
+            lastAccessed: new Date().getTime(),
+            manifestOnly: true,
+        })
+        return true
+    } finally {
+        release()
+    }
+}
+
+/**
+ * An array collection that was loaded only for the current operation: write its manifest and drop its data.
+ * Runs under the collection lock, so the manifest can never lag behind a flush that removes oplog files.
+ * A failing manifest write is not fatal: the data stays in memory and the next load tries again.
+ */
+const releaseArrayCollection = async function (db: DBConfig, collection: string) {
+    const collectionId = db.dataFiles + '/' + collection
+    const entry = startupDB[collectionId]
+    if (!isArrayCollection(entry) || !isDataLoaded(entry) || !entry.lock?.acquire) return
+    const release = await entry.lock.acquire()
+    try {
+        if (startupDB[collectionId] !== entry || !isDataLoaded(entry)) return
+        await persist.writeManifest(collection, manifestOf(entry), db)
+        toManifestOnlyEntry(collectionId, entry)
+    } catch (err) {
+        console.error(`STARTUPDB cannot write manifest for ${collection}: ${err?.message}`)
+    } finally {
+        release()
+    }
+}
+
+/**
+ * Prepare a collection for a write. Array collections whose data is not in memory get a data-less entry from their manifest.
+ * Without a manifest they are loaded once, given a manifest and released again, so the next write does not need the data.
+ * Other collections are loaded as before. Returns false when the collection cannot be loaded.
+ */
+const loadCollectionForWrite = async function (db: DBConfig, collection: string): Promise<boolean> {
+    const collectionId = db.dataFiles + '/' + collection
+    const before = startupDB[collectionId]
+    const inUse = isDataLoaded(before) || Boolean(before?.loading)
+    if (!inUse && (await loadManifest(db, collection))) return true
+    if (!(await loadCollection(db, collection))) return false
+    if (!inUse) await releaseArrayCollection(db, collection)
+    return true
+}
+
+const dbGetCollectionMeta = async function (db: DBConfig, collection: string): Promise<CollectionMeta | undefined> {
+    if (!(await loadCollectionForWrite(db, collection))) return undefined
+    const entry = startupDB[db.dataFiles + '/' + collection]
+    if (!entry) return undefined
+    return { checkPoint: entry.checkPoint || 0, nextOpLogId: entry.nextOpLogId, savedAt: entry.savedAt || 0, options: entry.options || {} }
+}
+
 const writeOperationToOpLog = async function (operation: Operation, db: DBConfig) {
     const dataFiles = db.dataFiles
     const collection = operation.collection
@@ -544,6 +667,9 @@ const dbaContext = () => ({
     startupDBGC,
     faultyCollections,
     latchOplogFault,
+    isDataLoaded,
+    manifestOf,
+    toManifestOnlyEntry,
 })
 /**
  * Send the oplog starting from the given opLogId as an array op operations
@@ -740,7 +866,8 @@ const dbDeleteObjects = async function (db: DBConfig, collection: string, payloa
 const dbUpdateObjects = async function (db: DBConfig, collection: string, payload: ArrayOfDBDataObjects, query = <any>{}): Promise<DBResponse> {
     const dataFiles = db.dataFiles
     const collectionId = dataFiles + '/' + collection
-    if (!(await loadCollection(db, collection))) return { statusCode: 500, message: { error: 'Cannot load resource', errorId: 'n1kl3z0w57d9' } }
+    // An array collection is rejected below; its manifest is enough to find that out
+    if (!(await loadCollectionForWrite(db, collection))) return { statusCode: 500, message: { error: 'Cannot load resource', errorId: 'n1kl3z0w57d9' } }
 
     if (startupDB[collectionId]?.options?.storageType == 'array') return { statusCode: 409, message: { error: 'Cannot update an array collection', errorId: 'S7lC7Y1ffWp8' } }
     addIdsToItemsThatHaveNone(payload)
@@ -847,7 +974,8 @@ const dbPatchObjects = async function (db: DBConfig, collection: string, payload
 const dbCreateObjects = async function (db: DBConfig, collection: string, payload: ArrayOfDBDataObjects, query = <any>{}): Promise<DBResponse> {
     const dataFiles = db.dataFiles
     const collectionId = dataFiles + '/' + collection
-    if (!(await loadCollection(db, collection))) return { statusCode: 500, message: { error: 'Cannot load resource', errorId: 'l57n3z0w19dk' } }
+    // An array collection needs no data to be written to: when it is not in memory, only its manifest is loaded
+    if (!(await loadCollectionForWrite(db, collection))) return { statusCode: 500, message: { error: 'Cannot load resource', errorId: 'l57n3z0w19dk' } }
 
     if (startupDB[collectionId]?.options?.storageType != 'array') {
         if (anyObjectIdExistsInCollection(payload, startupDB[collectionId].data))
@@ -873,7 +1001,15 @@ const dbCreateObjects = async function (db: DBConfig, collection: string, payloa
         },
     }
     await writeOperationToOpLog(operation, db)
-    applyCRUDoperation(operation, db, db.contentLength)
+    const entry = startupDB[collectionId]
+    if (isArrayCollection(entry)) {
+        // Keep loaded data in sync, but a write does not count as use: the garbage collector may still evict it
+        if (isDataLoaded(entry)) {
+            const lastAccessed = entry.lastAccessed
+            applyCRUDoperation(operation, db, db.contentLength)
+            entry.lastAccessed = lastAccessed
+        }
+    } else applyCRUDoperation(operation, db, db.contentLength)
     return { statusCode: 200, data: query?.returnType != 'tally' ? payload : { tally: payload.length } }
 }
 
@@ -949,6 +1085,9 @@ const setupStartupDB = function (): DBConfig {
     const noopExecuteDBAcommad = async function (payload: any): Promise<any> {
         return
     }
+    const noopGetCollectionMeta = async function (collection: string): Promise<CollectionMeta | undefined> {
+        return undefined
+    }
     return {
         options: {},
         dataFiles: '',
@@ -961,6 +1100,7 @@ const setupStartupDB = function (): DBConfig {
         patchObjects: noop,
         executeDBAcommand: noopExecuteDBAcommad,
         pullOplog: noopPullOplog,
+        getCollectionMeta: noopGetCollectionMeta,
     }
 }
 /**
@@ -1023,6 +1163,10 @@ const db = function (options: DBOptions) {
             if (options.readOnly) return res.sendStatus(403)
             if (!tools.isValidCollectionName(collection)) return invalidCollectionName()
             return dbPatchObjects(req.startupDB, collection, tools.ensureArray(payload))
+        }
+        req.startupDB.getCollectionMeta = async function (collection: string) {
+            if (!tools.isValidCollectionName(collection)) return undefined
+            return dbGetCollectionMeta(req.startupDB, collection)
         }
         req.startupDB.executeDBAcommand = async function (payload: any) {
             return dbExecuteDBAcommand(req, payload, dbaContext())
