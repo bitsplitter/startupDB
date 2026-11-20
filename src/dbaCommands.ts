@@ -22,7 +22,7 @@ const clearOplog = async function (collection: string, oldCheckPoint: number, ne
         await persist.remove(`oplog/${collection}/${operation}.json`, db)
     }
 }
-const flush = async function (req: Req, commandParameters: FlushCommandParams, { startupDB, initStartupDB }) {
+const flush = async function (req: Req, commandParameters: FlushCommandParams, { startupDB, initStartupDB, isDataLoaded, manifestOf, toManifestOnlyEntry }) {
     const collection = commandParameters.collection
     const archive = commandParameters.options?.archive
     if (!collection) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'tp5ut557FOBN' } }
@@ -36,6 +36,8 @@ const flush = async function (req: Req, commandParameters: FlushCommandParams, {
     if (oplogFiles.length == 0 && !force) return { response: 'OK' }
     const dataFiles = req.startupDB.dataFiles
     const collectionId = dataFiles + '/' + collection
+    // An array collection that is only in memory for this flush is released again afterwards
+    const wasLoaded = isDataLoaded(startupDB[collectionId])
     if (!startupDB[collectionId]?.data) await initStartupDB(req.startupDB, collection)
 
     let mutex: MutexInterface = startupDB[collectionId]?.lock
@@ -97,6 +99,18 @@ const flush = async function (req: Req, commandParameters: FlushCommandParams, {
             }
         }
 
+        // An array collection's manifest is written before the oplog files it accounts for are removed, so it never lags behind:
+        // a lagging manifest would hand out opLogIds that are already part of the checkpoint.
+        const isArray = startupDB[collectionId].options?.storageType == 'array'
+        if (isArray) {
+            try {
+                await persist.writeManifest(collection, manifestOf(startupDB[collectionId], { checkPoint: newCheckPoint, savedAt: savedAt }), req.startupDB)
+            } catch (err) {
+                debugLogger(err)
+                return { statusCode: 500, message: { error: 'Cannot save manifest', errorId: 'Mf7pR2kXq9Lb' } }
+            }
+        }
+
         // Preserve the current checkpoint under its number (copy, not rename), then atomically replace it.
         // On failure the old checkpoint is still intact and no in-memory state has changed.
         try {
@@ -113,6 +127,7 @@ const flush = async function (req: Req, commandParameters: FlushCommandParams, {
         startupDB[collectionId].savedAt = savedAt
         if (req.startupDB.options.opLogArchive != undefined && archive == true) await moveOpLog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
         else await clearOplog(collection, oldCheckPoint, newCheckPoint, req.startupDB)
+        if (isArray && !wasLoaded) toManifestOnlyEntry(collectionId, startupDB[collectionId])
         return { response: 'OK' }
     } finally {
         release()
@@ -134,7 +149,13 @@ const create = async function (req: Req, commandParameters: CreateCommandParams,
     if (commandParameters.options) startupDB[collectionId].options = commandParameters.options
     if (commandParameters.options?.storageType == 'array') startupDB[collectionId].data = []
     await persist.writeFile('./checkpoint/' + collection, 'latest.json', JSON.stringify(startupDB[collectionId]), req.startupDB)
+    await writeInitialManifest(req, collection, startupDB[collectionId])
     return { response: 'OK' }
+}
+// A new array collection gets its manifest right away, so its writes never need to load it
+const writeInitialManifest = async function (req: Req, collection: string, entry: any) {
+    if (entry?.options?.storageType != 'array') return
+    await persist.writeManifest(collection, { checkPoint: 0, nextOpLogId: 1, savedAt: 0, lastModified: 0, options: entry.options }, req.startupDB)
 }
 const ensureCollection = async function (req: Req, commandParameters: CreateCommandParams, { startupDB }) {
     const collection = commandParameters.collection
@@ -153,6 +174,7 @@ const ensureCollection = async function (req: Req, commandParameters: CreateComm
     if (commandParameters.options) startupDB[collectionId].options = commandParameters.options
     if (commandParameters.options?.storageType == 'array') startupDB[collectionId].data = []
     await persist.writeFile('./checkpoint/' + collection, 'latest.json', JSON.stringify(startupDB[collectionId]), req.startupDB)
+    await writeInitialManifest(req, collection, startupDB[collectionId])
     return { response: 'OK' }
 }
 const drop = async function (req: Req, commandParameters: DropCommandParams, { startupDB, faultyCollections }) {
@@ -276,16 +298,26 @@ const inspect = async function (
 }
 const list = async function (req: Req, commandParameters: SimpleCommandParams, { startupDB, faultyCollections }) {
     const dataFiles = req.startupDB.dataFiles
-    const collectionsList: Array<{ name: string; inCache: boolean; count: number; checkPoint: number; lastOplogId: number; faulty?: boolean; faultError?: string }> =
-        Object.keys(startupDB).map((collectionName) => {
-            return {
-                name: collectionName,
-                inCache: true,
-                count: startupDB[collectionName].data ? Object.keys(startupDB[collectionName].data)?.length : 0,
-                checkPoint: startupDB[collectionName].checkPoint,
-                lastOplogId: startupDB[collectionName].lastOplogId || 0,
-            }
-        })
+    const collectionsList: Array<{
+        name: string
+        inCache: boolean
+        dataLoaded?: boolean
+        count: number
+        checkPoint: number
+        lastOplogId: number
+        faulty?: boolean
+        faultError?: string
+    }> = Object.keys(startupDB).map((collectionName) => {
+        return {
+            name: collectionName,
+            inCache: true,
+            // false for an array collection that is only known from its manifest
+            dataLoaded: Boolean(startupDB[collectionName].data) && !startupDB[collectionName].manifestOnly,
+            count: startupDB[collectionName].data ? Object.keys(startupDB[collectionName].data)?.length : 0,
+            checkPoint: startupDB[collectionName].checkPoint,
+            lastOplogId: startupDB[collectionName].lastOplogId || 0,
+        }
+    })
     function addCollections(names: Array<string>) {
         const listedCollectionIndex = {}
         collectionsList.forEach((collection) => {

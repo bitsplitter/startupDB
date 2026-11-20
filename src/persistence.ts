@@ -273,6 +273,31 @@ const mostRecentFile = async function (dirName: string, db: DBConfig) {
     return max
 }
 
+/**
+ * The manifest of an array collection: its checkpoint wrapper without the data.
+ * It lets a write append to the oplog without loading the collection. It is never used to load data.
+ */
+const MANIFEST = 'manifest.json'
+const readManifest = async function (collection: string, db: DBConfig): Promise<any | null> {
+    let raw: string
+    try {
+        raw = await fs.readFile(path.join(db.dataFiles, 'checkpoint', collection, MANIFEST), 'utf8')
+    } catch (err) {
+        if (err.code == 'ENOENT') return null
+        throw err
+    }
+    try {
+        return JSON.parse(raw)
+    } catch {
+        return null // A damaged manifest is treated as absent: the caller loads the collection and writes a new one
+    }
+}
+const writeManifest = async function (collection: string, manifest: object, db: DBConfig) {
+    const dirName = './checkpoint/' + collection
+    await writeFile(dirName, MANIFEST + '.tmp', JSON.stringify(manifest), db)
+    await replaceFile(dirName + '/' + MANIFEST + '.tmp', dirName + '/' + MANIFEST, db)
+}
+
 function drain(writer) {
     return new Promise((resolve) => writer.once('drain', resolve))
 }
@@ -350,6 +375,7 @@ export default {
     readdir,
     readdirRecursive,
     readFile,
+    readManifest,
     rename,
     replaceFile,
     remove,
@@ -357,6 +383,7 @@ export default {
     writeFile,
     writeFileSync,
     writeNewFile,
+    writeManifest,
     writeCheckpointToStream,
     readCheckpointFromStream,
 }

@@ -85,7 +85,15 @@ export type DBConfig = {
     patchObjects: (collection: string, payload: ArrayOfDBDataObjects) => Promise<DBResponse>
     executeDBAcommand: (payload: any) => Promise<any>
     pullOplog: (collection: string) => Promise<void>
+    getCollectionMeta?: (collection: string) => Promise<CollectionMeta | undefined>
     contentLength: number
+}
+/** What a write needs to know about a collection, without its data */
+export type CollectionMeta = {
+    checkPoint: number
+    nextOpLogId: number
+    savedAt: number | string
+    options: CreateOptions
 }
 export interface DBDataObject {
     id: string
@@ -106,6 +114,8 @@ export interface Collection {
     length: number
     loading: boolean
     finishedLoading: boolean
+    // An array collection known only from its manifest: no data in memory, writes go straight to the oplog
+    manifestOnly?: boolean
 }
 
 export enum OperationType {

@@ -759,8 +759,8 @@ describe('Behaviour GET command', function () {
             .expect(200)
             .expect({
                 collections: [
-                    { name: 'origineel', inCache: true, count: 6, checkPoint: 0, lastOplogId: 0, faulty: false },
-                    { name: 'reject', inCache: true, count: 0, checkPoint: 0, lastOplogId: 0, faulty: false },
+                    { name: 'origineel', inCache: true, dataLoaded: true, count: 6, checkPoint: 0, lastOplogId: 0, faulty: false },
+                    { name: 'reject', inCache: true, dataLoaded: true, count: 0, checkPoint: 0, lastOplogId: 0, faulty: false },
                 ],
             })
             .end(done)
@@ -1288,7 +1288,10 @@ describe('Behaviour: expect GC after adding a lot of data', function () {
             .send({ command: 'inspect' })
             .expect(200)
             .expect(function (res) {
-                assert.strictEqual(res.body.usedBytesInMemory, 526)
+                // usedBytesInMemory is an estimate: clearCache and purgeOplog reset entries without subtracting their bytes,
+                // so this number depends on which collections the GC evicted before them. Since POSTs to an array
+                // collection no longer load it, the GC runs at different moments than it used to.
+                assert.strictEqual(res.body.usedBytesInMemory, 991)
                 assert.strictEqual(res.body.nrCollectionsInCache, 1)
             })
             .end(done)
