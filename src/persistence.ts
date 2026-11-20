@@ -297,6 +297,33 @@ const writeManifest = async function (collection: string, manifest: object, db: 
     await writeFile(dirName, MANIFEST + '.tmp', JSON.stringify(manifest), db)
     await replaceFile(dirName + '/' + MANIFEST + '.tmp', dirName + '/' + MANIFEST, db)
 }
+// Unlike remove(), these report failures: a manifest that survives when it should not can hand out wrong opLogIds
+const unlinkIfExists = async function (file: string) {
+    try {
+        await fs.unlink(file)
+    } catch (err) {
+        if (err.code != 'ENOENT') throw err
+    }
+}
+const removeManifest = async function (collection: string, db: DBConfig) {
+    for (const rootDir of [db.dataFiles, ...(db.options.secondaryDataDirs || [])]) await unlinkIfExists(path.join(rootDir, 'checkpoint', collection, MANIFEST))
+}
+const removeAllManifests = async function (db: DBConfig) {
+    const removeIn = async function (dirName: string) {
+        let entries: fs.Dirent[]
+        try {
+            entries = await fs.readdir(dirName, { withFileTypes: true })
+        } catch (err) {
+            if (err.code == 'ENOENT') return
+            throw err
+        }
+        for (const entry of entries) {
+            if (entry.isDirectory()) await removeIn(path.join(dirName, entry.name))
+            else if (entry.name == MANIFEST) await unlinkIfExists(path.join(dirName, entry.name))
+        }
+    }
+    for (const rootDir of [db.dataFiles, ...(db.options.secondaryDataDirs || [])]) await removeIn(path.join(rootDir, 'checkpoint'))
+}
 
 function drain(writer) {
     return new Promise((resolve) => writer.once('drain', resolve))
@@ -376,6 +403,8 @@ export default {
     readdirRecursive,
     readFile,
     readManifest,
+    removeAllManifests,
+    removeManifest,
     rename,
     replaceFile,
     remove,

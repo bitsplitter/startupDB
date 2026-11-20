@@ -190,10 +190,22 @@ const drop = async function (req: Req, commandParameters: DropCommandParams, { s
     delete faultyCollections[collectionId]
     return { response: 'OK' }
 }
-const purgeOplog = async function (req: Req, commandParameters: PurgeCommandParams, { startupDB, initStartupDB, faultyCollections }) {
+/*
+ * The manifest of an array collection may count operations that were never flushed. Purging them would leave it ahead of the
+ * checkpoint, so the next write would leave a gap in the oplog. The manifest goes before the oplog files do: a crash in between
+ * leaves no manifest, and the next write then loads the collection and writes a new one.
+ */
+const cannotRemoveManifest = { statusCode: 500, message: { error: 'Cannot remove manifest', errorId: 'Pg3wM8nQxT5v' } }
+const purgeOplog = async function (req: Req, commandParameters: PurgeCommandParams, { startupDB, initStartupDB, faultyCollections, manifestOf }) {
     const collections = commandParameters.collection
     if (!collections) return { statusCode: 400, message: { error: 'No collection specified', errorId: 'CIvNZ51YQM6q' } }
     if (collections == '*') {
+        try {
+            await persist.removeAllManifests(req.startupDB)
+        } catch (err) {
+            debugLogger(err)
+            return cannotRemoveManifest
+        }
         if (!persist.rmdirSync('./oplog', req.startupDB)) return { statusCode: 500, message: { error: 'Cannot remove files from oplog', errorId: 'WLmnUdhzwJ8s' } }
         for (const collectionId in startupDB) startupDB[collectionId] = {}
         for (const collectionId in faultyCollections) delete faultyCollections[collectionId]
@@ -202,10 +214,25 @@ const purgeOplog = async function (req: Req, commandParameters: PurgeCommandPara
     const dataFiles = req.startupDB.dataFiles
     for (const collection of collections.split(',')) {
         const collectionId = dataFiles + '/' + collection
+        try {
+            await persist.removeManifest(collection, req.startupDB)
+        } catch (err) {
+            debugLogger(err)
+            return cannotRemoveManifest
+        }
         if (!persist.rmdirSync('./oplog/' + collection, req.startupDB)) return { statusCode: 500, message: { error: 'Cannot remove files from oplog', errorId: 'J8nUdhzWLmws' } }
         startupDB[collectionId] = {}
         delete faultyCollections[collectionId]
         await initStartupDB(req.startupDB, collection)
+        // Reloaded from the checkpoint alone: a manifest written now is exact. If writing it fails, the next write loads and retries.
+        const entry = startupDB[collectionId]
+        if (entry?.options?.storageType == 'array' && entry.finishedLoading) {
+            try {
+                await persist.writeManifest(collection, manifestOf(entry), req.startupDB)
+            } catch (err) {
+                debugLogger(err)
+            }
+        }
     }
     return { response: 'OK' }
 }

@@ -238,4 +238,46 @@ describe('Array collections write through their manifest', function () {
             assert.ok(!fs.existsSync(manifestFile(c)))
         })
     })
+
+    // purgeOplog throws away operations that were never flushed. A manifest that still counts them would make the next
+    // write leave a gap after the checkpoint, and a client asking for the oplog from that checkpoint would get a 404 forever.
+    // These run last: purgeOplog '*' removes the oplog of every collection in this data dir.
+    describe('purgeOplog', function () {
+        // An array collection whose manifest counts unflushed operations: it got the manifest on a write after them
+        const withUnflushedManifest = async (c) => {
+            await ensureArray(c)
+            await post(c, rows(2)).expect(200)
+            await post(c, rows(2, 3)).expect(200)
+            fs.unlinkSync(manifestFile(c))
+            await dbaCommand({ command: 'clearCache', collection: c }).expect(200)
+            await post(c, rows(1, 5)).expect(200)
+            assert.strictEqual(readManifest(c).nextOpLogId, 3)
+        }
+        const writesContinueAfterCheckpoint = async (c) => {
+            await dbaCommand({ command: 'clearCache', collection: c }).expect(200)
+            await post(c, rows(1, 9)).expect(200)
+            assert.deepStrictEqual(oplogIds(c), [1])
+            const opLog = await request(server).get(`/db/${c}?fromOpLogId=0`).expect(200)
+            assert.strictEqual(opLog.body.length, 1)
+            assert.deepStrictEqual(
+                (await get(c).expect(200)).body.map((r) => r.ean),
+                ['e9']
+            )
+        }
+        it('of one collection rewrites its manifest from the checkpoint', async function () {
+            const c = 'shard/purged'
+            await withUnflushedManifest(c)
+            await dbaCommand({ command: 'purgeOplog', collection: c }).expect(200)
+            assert.strictEqual(readManifest(c).nextOpLogId, 1)
+            await writesContinueAfterCheckpoint(c)
+        })
+        it("of all collections ('*') removes the manifests, so the next write recreates them", async function () {
+            const c = 'shard/purgedall'
+            await withUnflushedManifest(c)
+            await dbaCommand({ command: 'purgeOplog', collection: '*' }).expect(200)
+            assert.ok(!fs.existsSync(manifestFile(c)))
+            await writesContinueAfterCheckpoint(c)
+            assert.strictEqual(readManifest(c).nextOpLogId, 1)
+        })
+    })
 })
